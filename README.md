@@ -70,6 +70,9 @@ DirectDraw/Direct3D 7: native resolutions above 2048 pixels (e.g. 2560×1440), n
 vsync, anisotropic filtering, anti-aliasing and full-precision textures. `Renderer=0` restores the original renderer,
 to which the notes on widths above apply. See [docs/RENDERER.md](docs/RENDERER.md).
 
+Textures can be replaced with higher-resolution 32-bit images: `[Textures] Dump=1` saves what the game draws, files
+named after them in `Textures\Replace\` are drawn instead. See [docs/TEXTURES.md](docs/TEXTURES.md).
+
 Print Screen cannot capture the full-screen game. Set `ScreenshotKey` in `BWDecomp.ini` (e.g. `123` for F12) to
 save PNG screenshots to `Screenshots\` in the game folder; `tools/screenshot.py` does the same from outside.
 

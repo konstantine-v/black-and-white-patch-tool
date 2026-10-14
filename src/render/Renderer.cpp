@@ -3,6 +3,9 @@
 #include "core/Log.h"
 #include "core/Patch.h"
 #include "render/DirectDraw.h"
+#include "render/TexturePack.h"
+
+#include <string>
 
 namespace bw::render {
 
@@ -39,6 +42,11 @@ void Install(HMODULE game, const Config& config) noexcept
         return;
     }
     g_active = true;
+
+    std::wstring exe(MAX_PATH, wchar_t{});
+    exe.resize(GetModuleFileNameW(game, exe.data(), static_cast<DWORD>(exe.size())));
+    textures::Initialise({config.dumpTextures, config.replaceTextures,
+                          std::filesystem::path(exe).parent_path() / L"Textures"});
     log::Info("Renderer: Direct3D 9 (vsync {}, anisotropy {}, anti-aliasing {}, full-precision textures {})",
               config.vsync ? "on" : "off", config.anisotropy, config.antiAliasing,
               config.fullPrecisionTextures ? "on" : "off");

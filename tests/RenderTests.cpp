@@ -4,6 +4,7 @@
 
 #include "render/Com.h"
 #include "render/Pixels.h"
+#include "render/TexturePack.h"
 #include "render/Translate.h"
 
 #include <bit>
@@ -147,4 +148,55 @@ TEST(DxtEncodeRoundTrips)
     DecodeBlock(Format::Dxt1, block, decoded);
     CHECK_EQ(decoded[3] >> 24, 0u);
     CHECK_EQ(decoded[0], 0xffff0000u);
+}
+
+TEST(ImagesConvertWholeIncludingBlocks)
+{
+    // A 2x1 R5G6B5 image with a padded pitch, and a 4x4 DXT1 block of one colour cut to 3x2.
+    const std::uint8_t rgb565[8] = {0x00, 0xf8, 0x1f, 0x00, 0xaa, 0xaa, 0xaa, 0xaa};
+    std::uint32_t out[6]{};
+    ImageToArgb(Format::R5G6B5, rgb565, 8, 2, 1, out);
+    CHECK_EQ(out[0], 0xffff0000u);
+    CHECK_EQ(out[1], 0xff0000ffu);
+    const std::uint8_t dxt1[8] = {0xe0, 0x07, 0xe0, 0x07, 0, 0, 0, 0};  // pure green, index 0 everywhere
+    ImageToArgb(Format::Dxt1, dxt1, 8, 3, 2, out);
+    for (const std::uint32_t pixel : out) {
+        CHECK_EQ(pixel, 0xff00ff00u);
+    }
+    CHECK(HasAlpha(Format::A4R4G4B4));
+    CHECK(!HasAlpha(Format::X1R5G5B5));
+}
+
+TEST(TextureHashesIgnorePaddingAndNameRoundTrips)
+{
+    const std::uint8_t a[8] = {1, 2, 3, 4, 9, 9, 9, 9};
+    const std::uint8_t b[8] = {1, 2, 3, 4, 7, 7, 7, 7};
+    const std::uint64_t hash = textures::Hash(Format::A8R8G8B8, 1, 1, a, 8);
+    CHECK_EQ(hash, textures::Hash(Format::A8R8G8B8, 1, 1, b, 8));
+    CHECK(hash != textures::Hash(Format::X8R8G8B8, 1, 1, a, 8));
+    CHECK(hash != textures::Hash(Format::A8R8G8B8, 1, 2, a, 4));
+
+    std::uint64_t parsed = 0;
+    CHECK(textures::ParseHashName(textures::HashName(hash) + L"_256x256_A4R4G4B4.png", parsed));
+    CHECK_EQ(parsed, hash);
+    CHECK(textures::ParseHashName(L"BW_00000000000000FF.dds", parsed));
+    CHECK_EQ(parsed, 0xffull);
+    CHECK(!textures::ParseHashName(L"bw_00000000000000ff0.png", parsed));
+    CHECK(!textures::ParseHashName(L"bw_0000000000000xff.png", parsed));
+    CHECK(!textures::ParseHashName(L"grass.png", parsed));
+}
+
+TEST(MipmapsAverageTwoByTwo)
+{
+    textures::Image image;
+    image.width = 3;
+    image.height = 2;
+    image.argb = {0xff000000u, 0xff0000ffu, 0x00ffffffu, 0xff000000u, 0xff0000ffu, 0x00ffffffu};
+    const textures::Image half = textures::HalveImage(image);
+    CHECK_EQ(half.width, 1u);
+    CHECK_EQ(half.height, 1u);
+    CHECK_EQ(half.argb[0], 0xff000080u);  // blue 255 + 0 over two columns, both rows
+    const textures::Image last = textures::HalveImage(half);
+    CHECK_EQ(last.width, 1u);
+    CHECK_EQ(last.argb[0], half.argb[0]);
 }

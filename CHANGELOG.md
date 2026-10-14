@@ -4,6 +4,16 @@ Versions follow [semantic versioning](https://semver.org/) while the decompilati
 increases with each wave of decompiled code or fixes, the patch version for corrections. The version is set in
 `CMakeLists.txt` and tagged in git as `vX.Y.Z`.
 
+## 0.9.0
+
+Texture packs: replacement textures of any resolution in 32-bit colour.
+
+- `[Textures] Dump=1` saves every distinct texture the game draws to `Textures\Dump\` as PNG, named by a hash of its
+  contents; `Replace=1` (default) draws images from `Textures\Replace\` named after those hashes instead: any size,
+  8 bits per channel with alpha, PNG/DDS/BMP/JPEG/TIFF, with generated mipmaps. See `docs/TEXTURES.md`.
+- Whole texture pages are replaced; fonts and the landscape are built at runtime and cannot be replaced yet.
+- Tested: the creature skin page replaced with a 4x larger image in the front end.
+
 ## 0.8.0
 
 The Direct3D 9 renderer becomes the default, with anti-aliasing and better textures.

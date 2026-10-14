@@ -61,8 +61,11 @@ public:
     /// Uploads CPU changes to the GPU copy; done automatically before drawing.
     void Upload() noexcept;
     [[nodiscard]] std::uint32_t Levels() const noexcept { return m_levels; }
-    /// The IDirect3DTexture9 to draw with.
-    [[nodiscard]] void* Native() const noexcept { return m_full != nullptr ? m_full : m_gpu; }
+    /// The IDirect3DTexture9 to draw with: a texture pack's replacement, the full-precision copy, or the plain copy.
+    [[nodiscard]] void* Native() const noexcept
+    {
+        return m_replacement != nullptr ? m_replacement : (m_full != nullptr ? m_full : m_gpu);
+    }
 
 private:
     Texture(void* system, void* gpu, std::uint32_t width, std::uint32_t height, std::uint32_t levels,
@@ -72,11 +75,15 @@ private:
     }
     bool MakeFullPrecision() noexcept;
     void ConvertToFullPrecision(std::uint32_t level) noexcept;
+    /// Hashes the top level after the game changed it; dumps it and finds its replacement (render/TexturePack.h).
+    void Identify() noexcept;
 
     void* m_system;                // IDirect3DTexture9*, D3DPOOL_SYSTEMMEM, the game's format
     void* m_gpu;                   // IDirect3DTexture9*, D3DPOOL_DEFAULT, the game's format; released at full precision
     void* m_fullSystem = nullptr;  // IDirect3DTexture9*, D3DPOOL_SYSTEMMEM, A8R8G8B8 (full precision only)
     void* m_full = nullptr;        // IDirect3DTexture9*, D3DPOOL_DEFAULT, A8R8G8B8 (full precision only)
+    void* m_replacement = nullptr; // IDirect3DTexture9*, a texture pack's image (shared, one reference held)
+    std::uint64_t m_hash = 0;      // of the top level, when texture packs are active
     std::uint32_t m_width;
     std::uint32_t m_height;
     std::uint32_t m_levels;

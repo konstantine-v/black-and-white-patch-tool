@@ -90,6 +90,8 @@ Config Config::Load(const std::filesystem::path& iniFile)
         std::min<std::uint32_t>(ReadUnsigned(iniFile, L"Display", L"AntiAliasing", config.antiAliasing), 16);
     config.fullPrecisionTextures =
         ReadBool(iniFile, L"Display", L"FullPrecisionTextures", config.fullPrecisionTextures);
+    config.dumpTextures = ReadBool(iniFile, L"Textures", L"Dump", config.dumpTextures);
+    config.replaceTextures = ReadBool(iniFile, L"Textures", L"Replace", config.replaceTextures);
     if (config.renderer == Renderer::Direct3D9 && config.windowMode == WindowMode::FullScreen) {
         // The Direct3D 9 renderer never changes the display mode: "full screen" is a borderless window.
         config.windowMode = WindowMode::Borderless;

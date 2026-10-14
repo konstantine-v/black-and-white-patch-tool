@@ -114,6 +114,7 @@ Things Direct3D 9 does not have, handled in the replacement:
 | `Gpu.cpp` | The only file that includes `d3d9.h`: device, textures (system-memory copy uploaded before drawing; 9Ex has no managed pool), render targets (multisampled with a single-sampled copy), depth buffers, depth probes (occlusion queries), draws, presentation through a separate swap chain sized to the window (resizing never resets the device) |
 | `Translate.cpp`, `Pixels.cpp`, `Format.cpp` | Pure translation: states, transforms, vertex formats, pixel formats (unit-tested) |
 | `DepthView.cpp` | Lazy CPU view of the depth buffer (below) |
+| `TexturePack.cpp` | Texture dumping and replacement by content hash ([TEXTURES.md](TEXTURES.md)) |
 
 What it took beyond a one-to-one translation:
 
@@ -160,3 +161,5 @@ PNG files in `Screenshots\`.
 2. DirectDraw and Direct3D 7 on Direct3D 9Ex: front end, videos, game, native resolutions above 2048. Done in 0.7.0.
 3. Anti-aliasing, full-precision textures, the sun test through occlusion queries, Direct3D 9 as the default. Done in
    0.8.0.
+4. Texture packs: dumping and replacing textures with images of any size in 32-bit colour. Done in 0.9.0
+   ([TEXTURES.md](TEXTURES.md)).

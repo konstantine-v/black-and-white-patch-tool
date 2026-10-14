@@ -47,6 +47,10 @@ struct Config {
     std::uint32_t antiAliasing = 0;              ///< AntiAliasing: Direct3D 9 renderer's samples per pixel, 0 = off.
     bool fullPrecisionTextures = true;           ///< FullPrecisionTextures: decoded DXT textures keep their colours.
 
+    // [Textures] (Direct3D 9 renderer; render/TexturePack.h)
+    bool dumpTextures = false;                   ///< Dump: save each texture the game draws to Textures\Dump.
+    bool replaceTextures = true;                 ///< Replace: draw images from Textures\Replace instead.
+
     // [Hooks]
     std::vector<Address> disabledHooks;          ///< Disabled: original addresses that keep running original code.
 

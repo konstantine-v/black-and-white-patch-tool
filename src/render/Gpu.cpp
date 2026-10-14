@@ -2,6 +2,7 @@
 
 #include "core/Log.h"
 #include "render/Pixels.h"
+#include "render/TexturePack.h"
 #include "render/Translate.h"
 
 #include <d3d9.h>
@@ -11,6 +12,7 @@
 #include <cstring>
 #include <new>
 #include <array>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -58,6 +60,9 @@ struct Device {
 
     std::array<Probe, kDepthProbes> probes;
     bool queriesUnavailable = false;
+
+    /// Texture-pack images by content hash, shared by every texture with that content; null when unreadable.
+    std::unordered_map<std::uint64_t, ComPtr<IDirect3DTexture9>> replacements;
 };
 
 Device* g_device = nullptr;
@@ -473,6 +478,7 @@ Texture::~Texture()
     Release<IDirect3DTexture9>(m_gpu);
     Release<IDirect3DTexture9>(m_fullSystem);
     Release<IDirect3DTexture9>(m_full);
+    Release<IDirect3DTexture9>(m_replacement);
 }
 
 bool Texture::Lock(std::uint32_t level, const RECT* rect, bool readOnly, LockedRect& out) noexcept
@@ -586,6 +592,9 @@ void Texture::Upload() noexcept
         return;
     }
     ++g_statistics.textureUploads;
+    if ((m_dirtyLevels & 1u) != 0 && textures::Active()) {
+        Identify();
+    }
     if (m_full != nullptr) {
         for (std::uint32_t level = 0; level < m_levels; ++level) {
             if ((m_dirtyLevels & ~m_preciseLevels & (1u << level)) != 0) {
@@ -598,6 +607,126 @@ void Texture::Upload() noexcept
         BW_GPU_CHECK(D()->UpdateTexture(AsTexture(m_system), AsTexture(m_gpu)));
     }
     m_dirtyLevels = 0;
+}
+
+namespace {
+
+/// The texture pack's image for `hash` as a GPU texture with a full mipmap chain (cached), or null.
+IDirect3DTexture9* Replacement(std::uint64_t hash, bool alpha) noexcept
+{
+    Device& d = *g_device;
+    if (const auto it = d.replacements.find(hash); it != d.replacements.end()) {
+        return it->second.Get();
+    }
+    ComPtr<IDirect3DTexture9>& cached = d.replacements[hash];
+    textures::Image image;
+    if (!textures::LoadReplacement(hash, image)) {
+        return nullptr;
+    }
+    D3DCAPS9 caps{};
+    d.device->GetDeviceCaps(&caps);
+    if (image.width > caps.MaxTextureWidth || image.height > caps.MaxTextureHeight) {
+        log::Warning("Textures: {} is {}x{}; this GPU takes at most {}x{}",
+                     std::filesystem::path(textures::HashName(hash)).string(), image.width, image.height,
+                     caps.MaxTextureWidth, caps.MaxTextureHeight);
+        return nullptr;
+    }
+    if (!alpha) {
+        // The game's texture has no alpha: keep its blending exactly as with the original.
+        for (std::uint32_t& texel : image.argb) {
+            texel |= 0xff000000u;
+        }
+    }
+    const std::uint32_t width = image.width;
+    const std::uint32_t height = image.height;
+    UINT levels = 1;
+    for (std::uint32_t size = std::max(image.width, image.height); size > 1; size /= 2) {
+        ++levels;
+    }
+    ComPtr<IDirect3DTexture9> system;
+    ComPtr<IDirect3DTexture9> gpu;
+    if (FAILED(BW_GPU_CHECK(d.device->CreateTexture(image.width, image.height, levels, 0, D3DFMT_A8R8G8B8,
+                                                     D3DPOOL_SYSTEMMEM, &system, nullptr))) ||
+        FAILED(BW_GPU_CHECK(d.device->CreateTexture(image.width, image.height, levels, 0, D3DFMT_A8R8G8B8,
+                                                     D3DPOOL_DEFAULT, &gpu, nullptr)))) {
+        return nullptr;
+    }
+    try {
+        for (UINT level = 0; level < levels; ++level) {
+            if (level > 0) {
+                image = textures::HalveImage(image);
+            }
+            D3DLOCKED_RECT locked{};
+            if (FAILED(system->LockRect(level, &locked, nullptr, 0))) {
+                return nullptr;
+            }
+            for (std::uint32_t y = 0; y < image.height; ++y) {
+                std::memcpy(static_cast<std::uint8_t*>(locked.pBits) + std::size_t{y} * locked.Pitch,
+                            image.argb.data() + std::size_t{y} * image.width, std::size_t{image.width} * 4);
+            }
+            system->UnlockRect(level);
+        }
+    }
+    catch (const std::bad_alloc&) {
+        return nullptr;
+    }
+    if (FAILED(BW_GPU_CHECK(d.device->UpdateTexture(system.Get(), gpu.Get())))) {
+        return nullptr;
+    }
+    cached = gpu;
+    log::Info("Textures: replaced {} with a {}x{} image", std::filesystem::path(textures::HashName(hash)).string(),
+              width, height);
+    return cached.Get();
+}
+
+}  // namespace
+
+void Texture::Identify() noexcept
+{
+    if (!CanConvert(m_format, Format::A8R8G8B8)) {
+        return;
+    }
+    D3DLOCKED_RECT locked{};
+    if (FAILED(AsTexture(m_system)->LockRect(0, &locked, nullptr, D3DLOCK_READONLY))) {
+        return;
+    }
+    const auto* bits = static_cast<const std::uint8_t*>(locked.pBits);
+    const std::uint64_t hash = textures::Hash(m_format, m_width, m_height, bits, locked.Pitch);
+    if (hash != m_hash) {
+        m_hash = hash;
+        Release<IDirect3DTexture9>(m_replacement);
+        if (textures::WantsDump(hash)) {
+            // The colours as the game sees them, or the full-precision ones where the game decoded a DXT texture.
+            textures::Image image;
+            image.width = m_width;
+            image.height = m_height;
+            try {
+                image.argb.resize(std::size_t{m_width} * m_height);
+            }
+            catch (const std::bad_alloc&) {
+                AsTexture(m_system)->UnlockRect(0);
+                return;
+            }
+            D3DLOCKED_RECT precise{};
+            if ((m_preciseLevels & 1u) != 0 &&
+                SUCCEEDED(AsTexture(m_fullSystem)->LockRect(0, &precise, nullptr, D3DLOCK_READONLY))) {
+                ImageToArgb(Format::A8R8G8B8, static_cast<const std::uint8_t*>(precise.pBits), precise.Pitch, m_width,
+                            m_height, image.argb.data());
+                AsTexture(m_fullSystem)->UnlockRect(0);
+            }
+            else {
+                ImageToArgb(m_format, bits, locked.Pitch, m_width, m_height, image.argb.data());
+            }
+            textures::Dump(hash, m_format, image);
+        }
+        if (textures::HasReplacement(hash)) {
+            if (IDirect3DTexture9* replacement = Replacement(hash, HasAlpha(m_format))) {
+                replacement->AddRef();
+                m_replacement = replacement;
+            }
+        }
+    }
+    AsTexture(m_system)->UnlockRect(0);
 }
 
 // ----------------------------------------------------------------------------------------------------- RenderTarget
@@ -1121,6 +1250,7 @@ void Shutdown() noexcept
         for (Probe& probe : g_device->probes) {
             probe.query.Reset();
         }
+        g_device->replacements.clear();
         g_device->swapChain.Reset();
         g_device->stagingSystem.Reset();
         g_device->stagingGpu.Reset();

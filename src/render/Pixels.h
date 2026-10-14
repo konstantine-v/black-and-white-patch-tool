@@ -24,6 +24,14 @@ void DecodeBlock(Format format, const std::uint8_t* block, std::uint32_t* pixels
 /// range, each pixel's nearest of the four interpolated colours. Fast and simple, not a high-quality compressor.
 void EncodeBlock(Format format, const std::uint32_t* pixels, std::uint8_t* block) noexcept;
 
+/// Converts a `width` x `height` image of `from` (rows `pitch` bytes apart; rows of 4x4 blocks for compressed formats)
+/// into A8R8G8B8, `width` pixels per row. `from` must be convertible (CanConvert).
+void ImageToArgb(Format from, const std::uint8_t* bits, std::int32_t pitch, std::uint32_t width, std::uint32_t height,
+                 std::uint32_t* destination) noexcept;
+
+/// True when pixels of `format` carry alpha (DXT1 counts: its transparent texels).
+[[nodiscard]] bool HasAlpha(Format format) noexcept;
+
 /// True when CPU conversion between the two formats is supported (colour formats, including block-compressed ones).
 [[nodiscard]] bool CanConvert(Format from, Format to) noexcept;
 

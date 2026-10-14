@@ -368,6 +368,48 @@ void EncodeBlock(Format format, const std::uint32_t* pixels, std::uint8_t* block
     }
 }
 
+void ImageToArgb(Format from, const std::uint8_t* bits, std::int32_t pitch, std::uint32_t width, std::uint32_t height,
+                 std::uint32_t* destination) noexcept
+{
+    if (!IsBlockCompressed(from)) {
+        for (std::uint32_t y = 0; y < height; ++y) {
+            RowToArgb(from, bits + std::size_t{y} * pitch, destination + std::size_t{y} * width, width);
+        }
+        return;
+    }
+    const std::size_t blockBytes = from == Format::Dxt1 ? 8 : 16;
+    std::uint32_t block[16];
+    for (std::uint32_t by = 0; by < height; by += 4) {
+        for (std::uint32_t bx = 0; bx < width; bx += 4) {
+            DecodeBlock(from, bits + std::size_t{by / 4} * pitch + std::size_t{bx / 4} * blockBytes, block);
+            for (std::uint32_t py = 0; py < 4 && by + py < height; ++py) {
+                for (std::uint32_t px = 0; px < 4 && bx + px < width; ++px) {
+                    destination[std::size_t{by + py} * width + bx + px] = block[py * 4 + px];
+                }
+            }
+        }
+    }
+}
+
+bool HasAlpha(Format format) noexcept
+{
+    switch (format) {
+    case Format::A1R5G5B5:
+    case Format::A4R4G4B4:
+    case Format::A8R8G8B8:
+    case Format::A8:
+    case Format::A8L8:
+    case Format::Dxt1:
+    case Format::Dxt2:
+    case Format::Dxt3:
+    case Format::Dxt4:
+    case Format::Dxt5:
+        return true;
+    default:
+        return false;
+    }
+}
+
 bool CanConvert(Format from, Format to) noexcept
 {
     auto convertible = [](Format format) {
