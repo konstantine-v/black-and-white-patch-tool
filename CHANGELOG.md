@@ -4,6 +4,18 @@ Versions follow [semantic versioning](https://semver.org/) while the decompilati
 increases with each wave of decompiled code or fixes, the patch version for corrections. The version is set in
 `CMakeLists.txt` and tagged in git as `vX.Y.Z`.
 
+## 0.2.0
+
+First version that starts on Windows 10 and reaches the front end.
+
+- Decompiled `LHScreen::SetMode` and `FindGameDisc` (`PCMain.cpp`); 14 functions in total.
+- Fixes: DirectX version check (`DirectXVersionReport`), 16-bit colour Direct3D crash (`ColorDepth32`), disc
+  requirement (`DiscFromInstallFolder`).
+- Diagnostics: exit, message-box and exception tracing with return addresses, game debug output in the log.
+- `tools/install/install_game.py`: installs from the disc image without the original setup; writes `GameDir` (HKCU).
+- Import patching by ordinal.
+- Docs: settings and saves live under `HKEY_CURRENT_USER` (no administrator rights needed).
+
 ## 0.1.0
 
 - Project structure: `BWLaunch.exe` starts the supported `runblack.exe` suspended and loads `BWDecomp.dll`, which

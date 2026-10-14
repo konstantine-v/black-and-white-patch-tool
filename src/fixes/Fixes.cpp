@@ -13,6 +13,22 @@ namespace {
 decltype(&::GlobalMemoryStatus) g_originalGlobalMemoryStatus = nullptr;
 std::uint32_t g_maxPhysicalMemoryMiB = 0;
 
+/// DSETUP.dll ordinal 11, DirectXSetupGetVersion.
+using DirectXSetupGetVersionFunction = INT(WINAPI*)(DWORD* version, DWORD* revision);
+constexpr std::uint16_t kDirectXSetupGetVersionOrdinal = 11;
+
+/// DirectX 9.0c ("4.09.00.0904"), the version current Windows registers for compatibility.
+INT WINAPI DirectXSetupGetVersionCurrent(DWORD* version, DWORD* revision)
+{
+    if (version != nullptr) {
+        *version = 0x0004'0009;
+    }
+    if (revision != nullptr) {
+        *revision = 0x0000'0904;
+    }
+    return TRUE;
+}
+
 void WINAPI GlobalMemoryStatusClamped(MEMORYSTATUS* status)
 {
     g_originalGlobalMemoryStatus(status);
@@ -23,6 +39,9 @@ void WINAPI GlobalMemoryStatusClamped(MEMORYSTATUS* status)
 
 void InstallAll(HMODULE game, const Config& config) noexcept
 {
+    if (config.directXVersionReport) {
+        InstallDirectXVersionReport(game);
+    }
     if (config.dpiAware) {
         InstallDpiAwareness();
     }
@@ -53,6 +72,20 @@ void InstallDpiAwareness() noexcept
         return;
     }
     log::Warning("Fix DpiAware: could not change DPI awareness ({})", GetLastError());
+}
+
+void InstallDirectXVersionReport(HMODULE game) noexcept
+{
+    // GameMain (0x005f1550) calls DirectXSetupGetVersion and quits with "You need DirectX 7 or greater to play
+    // Black & White." unless the version exceeds 0x00040006. The disc's 1999 DSETUP.dll derives the version from
+    // system file versions and does not recognise current Windows, so the game never starts.
+    const auto original = patch::ReplaceImport(game, "DSETUP.dll", kDirectXSetupGetVersionOrdinal,
+                                               DirectXSetupGetVersionFunction{&DirectXSetupGetVersionCurrent});
+    if (original == nullptr) {
+        log::Warning("Fix DirectXVersionReport: DSETUP.dll ordinal 11 is not imported");
+        return;
+    }
+    log::Info("Fix DirectXVersionReport: DirectX reported as 9.0c");
 }
 
 void InstallExecutableSelfModifyingCode(HMODULE game) noexcept

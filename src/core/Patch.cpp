@@ -53,7 +53,11 @@ void FlushCode(Address begin, std::size_t size) noexcept
     FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<const void*>(begin), size);
 }
 
-void* ReplaceImport(HMODULE module, std::string_view dll, std::string_view function, const void* replacement) noexcept
+namespace {
+
+/// Walks `module`'s imports from `dll` and replaces the first one for which `matches(thunk)` holds.
+template <typename Matches>
+void* ReplaceImportWhere(HMODULE module, std::string_view dll, Matches matches, const void* replacement) noexcept
 {
     const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(module);
     const auto* nt = AtRva<IMAGE_NT_HEADERS>(module, static_cast<DWORD>(dos->e_lfanew));
@@ -73,11 +77,7 @@ void* ReplaceImport(HMODULE module, std::string_view dll, std::string_view funct
                                                                 : descriptor->FirstThunk);
         auto* slots = const_cast<IMAGE_THUNK_DATA*>(AtRva<IMAGE_THUNK_DATA>(module, descriptor->FirstThunk));
         for (; names->u1.AddressOfData != 0; ++names, ++slots) {
-            if (IMAGE_SNAP_BY_ORDINAL(names->u1.Ordinal)) {
-                continue;
-            }
-            const auto* byName = AtRva<IMAGE_IMPORT_BY_NAME>(module, static_cast<DWORD>(names->u1.AddressOfData));
-            if (function != reinterpret_cast<const char*>(byName->Name)) {
+            if (!matches(*names)) {
                 continue;
             }
             void* previous = reinterpret_cast<void*>(slots->u1.Function);
@@ -91,6 +91,32 @@ void* ReplaceImport(HMODULE module, std::string_view dll, std::string_view funct
         }
     }
     return nullptr;
+}
+
+}  // namespace
+
+void* ReplaceImport(HMODULE module, std::string_view dll, std::string_view function, const void* replacement) noexcept
+{
+    return ReplaceImportWhere(
+        module, dll,
+        [&](const IMAGE_THUNK_DATA& thunk) {
+            if (IMAGE_SNAP_BY_ORDINAL(thunk.u1.Ordinal)) {
+                return false;
+            }
+            const auto* byName = AtRva<IMAGE_IMPORT_BY_NAME>(module, static_cast<DWORD>(thunk.u1.AddressOfData));
+            return function == reinterpret_cast<const char*>(byName->Name);
+        },
+        replacement);
+}
+
+void* ReplaceImport(HMODULE module, std::string_view dll, std::uint16_t ordinal, const void* replacement) noexcept
+{
+    return ReplaceImportWhere(
+        module, dll,
+        [&](const IMAGE_THUNK_DATA& thunk) {
+            return IMAGE_SNAP_BY_ORDINAL(thunk.u1.Ordinal) && IMAGE_ORDINAL(thunk.u1.Ordinal) == ordinal;
+        },
+        replacement);
 }
 
 }  // namespace bw::patch

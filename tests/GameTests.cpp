@@ -5,6 +5,7 @@
 #include "core/Hook.h"
 #include "fixes/Fixes.h"
 #include "game/black/CPUCheck.h"
+#include "game/black/PCMain.h"
 #include "game/lhlib/LHScreen.h"
 
 #include <algorithm>
@@ -113,7 +114,7 @@ TEST(PhysicalMemoryClamp)
     CHECK_EQ(status.dwAvailPhys, SIZE_T{32} << 20);
 }
 
-TEST(CPUCheckHooksMatchOriginalConventions)
+TEST(HooksMatchOriginalConventions)
 {
     struct Expected {
         bw::Address address;
@@ -129,6 +130,8 @@ TEST(CPUCheckHooksMatchOriginalConventions)
         {0x0045c610, Thiscall, 0},
         {0x0045d260, Stdcall, 16},  // DirectDraw enumeration callback: ret 0x10
         {0x0045d4a0, Cdecl, 0},
+        {0x005f1250, Cdecl, 0},     // FindGameDisc
+        {0x00748d70, Thiscall, 12}, // LHScreen::SetMode: ret 0xc
         {0x00749a70, Thiscall, 0},  // LHScreen::GetAvailableVideoMemory: ret
     };
     for (const Expected& hook : expected) {
@@ -139,4 +142,19 @@ TEST(CPUCheckHooksMatchOriginalConventions)
             CHECK_EQ(registered->calleeStackBytes, hook.calleeStackBytes);
         }
     }
+}
+
+TEST(ColorDepthPromotion)
+{
+    CHECK_EQ(lhlib::EffectiveColorDepth(16, true), 32);
+    CHECK_EQ(lhlib::EffectiveColorDepth(16, false), 16);
+    CHECK_EQ(lhlib::EffectiveColorDepth(32, true), 32);
+    CHECK_EQ(lhlib::EffectiveColorDepth(24, true), 24);
+}
+
+TEST(GameDiscIdentification)
+{
+    CHECK(black::IsGameDisc("BNW", "CDFS"));
+    CHECK(!black::IsGameDisc("BNW", "NTFS"));
+    CHECK(!black::IsGameDisc("BW2", "CDFS"));
 }

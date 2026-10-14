@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(BlackWhiteDecomp VERSION 0.1.0 LANGUAGES CXX)
+project(BlackWhiteDecomp VERSION 0.2.0 LANGUAGES CXX)
 
 if(NOT MSVC OR NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
     message(FATAL_ERROR "Build with MSVC for 32-bit x86 (-A Win32): the code runs inside the 32-bit runblack.exe.")
@@ -35,7 +35,9 @@ target_link_libraries(bw_core PUBLIC bw_options bcrypt)
 # even though nothing references it by name.
 add_library(bw_game OBJECT
     src/game/black/CPUCheck.cpp
+    src/game/black/PCMain.cpp
     src/game/lhlib/LHScreen.cpp
+    src/diagnostics/Diagnostics.cpp
     src/fixes/Fixes.cpp)
 target_link_libraries(bw_game PUBLIC bw_core ddraw dxguid)
 

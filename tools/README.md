@@ -17,6 +17,8 @@ E:/Tools/re-venv/Scripts/python -m pip install capstone==5.0.6 pefile==2024.8.26
 | `xref.py <exe> <functions.csv> <va>...` | References to addresses (immediates, displacements, rel32 calls/jumps) |
 | `cstr.py <exe> <va>...` | Print C strings at addresses |
 | `find_imm.py <exe> <functions.csv> <value>...` | Instructions using given constants |
+| `install/install_game.py --iso <BNW.iso> --dest <folder> [--decomp <build>]` | Install the game from the disc image (needs 7-Zip) |
+| `install/iscab_extract.py <data1.hdr> <out>` | Extract InstallShield 5/6 cabinets with MD5 verification |
 
 `rea_procedures.json` is REA's `list_procedures` output for `orig/runblack.exe` (Ghidra 12.1.4, default analysis).
 Outputs derived from the executable go to `orig/`, which is never committed.

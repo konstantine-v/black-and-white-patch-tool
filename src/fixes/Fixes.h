@@ -13,6 +13,7 @@ void InstallAll(HMODULE game, const Config& config) noexcept;
 
 void InstallDpiAwareness() noexcept;
 void InstallExecutableSelfModifyingCode(HMODULE game) noexcept;
+void InstallDirectXVersionReport(HMODULE game) noexcept;
 void InstallPhysicalMemoryReport(HMODULE game, std::uint32_t maxMiB) noexcept;
 
 /// Clamps a MEMORYSTATUS so that dwTotalPhys <= maxMiB (0 = unlimited) and the available counts never exceed the

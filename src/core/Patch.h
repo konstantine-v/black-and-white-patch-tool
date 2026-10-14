@@ -4,7 +4,9 @@
 #include "core/Windows.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <string_view>
+#include <type_traits>
 
 /// Low-level code patching: protection changes, jump writes and import-address-table replacement.
 namespace bw::patch {
@@ -46,13 +48,17 @@ void FlushCode(Address begin, std::size_t size) noexcept;
 [[nodiscard]] void* ReplaceImport(HMODULE module, std::string_view dll, std::string_view function,
                                   const void* replacement) noexcept;
 
-/// Typed form of ReplaceImport: the replacement must have exactly the imported function's type.
-template <typename Function>
-[[nodiscard]] Function ReplaceImport(HMODULE module, std::string_view dll, std::string_view function,
-                                     Function replacement) noexcept
+/// Same for an import by ordinal (e.g. DSETUP.dll, which the game imports without names).
+[[nodiscard]] void* ReplaceImport(HMODULE module, std::string_view dll, std::uint16_t ordinal,
+                                  const void* replacement) noexcept;
+
+/// Typed forms of ReplaceImport: the replacement must have exactly the imported function's type. `Id` is the
+/// function name or its ordinal.
+template <typename Function, typename Id>
+    requires std::is_pointer_v<Function> && std::is_function_v<std::remove_pointer_t<Function>>
+[[nodiscard]] Function ReplaceImport(HMODULE module, std::string_view dll, Id id, Function replacement) noexcept
 {
-    return reinterpret_cast<Function>(
-        ReplaceImport(module, dll, function, reinterpret_cast<const void*>(replacement)));
+    return reinterpret_cast<Function>(ReplaceImport(module, dll, id, reinterpret_cast<const void*>(replacement)));
 }
 
 }  // namespace bw::patch

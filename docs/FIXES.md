@@ -16,6 +16,36 @@ blocks it since 2015.
 says what to do. The unprotected build still carries SafeDisc's dead `stxt774`/`stxt371` sections; they disappear
 when the decompilation becomes a standalone executable.
 
+### "You need DirectX 7 or greater to play Black & White."
+
+**Symptom:** the game shows this message and quits immediately, on any current Windows.
+**Cause:** `GameMain` (`0x005f1550`) asks the disc's 1999 `DSETUP.dll` (`DirectXSetupGetVersion`, imported by ordinal
+11) and requires a version above `0x00040006`. That DLL derives the version from system file versions and does not
+recognise current Windows, although the registry correctly reports DirectX 4.09.00.0904.
+**Fix:** the import is answered with DirectX 9.0c (`4.09.00.0904`), the version current Windows registers
+(`DirectXVersionReport`).
+
+### Crash at start-up in 16-bit colour
+
+**Symptom:** access violation at `0x00775031` right after "ZBUFFER 16 bits" in the log; with the default settings the
+game never gets past start-up.
+**Cause:** the game defaults to 16-bit colour (`ScreenD`, read by `PCMain` at `0x005f2650`). Current drivers do not
+create a hardware Direct3D 7 device, or attach a z-buffer, on a 16-bit display mode. `LH3DRender`'s Direct3D start-up
+(`0x00785fd0`) ignores the failed `CreateDevice`, so the first transform call goes through a null device pointer
+(`0x00de9494`).
+**Fix:** `LHScreen::SetMode` (`0x00748d70`) is decompiled and runs 16-bit requests at 32 bits (`ColorDepth32`). The
+game already supports 32-bit colour: textures, fonts and pixel formats follow the mode actually set.
+
+### Disc required
+
+**Symptom:** without the disc in a drive, the game sits on a black screen for 30 seconds and quits.
+**Cause:** `FindGameDisc` (`0x005f1250`) looks on drives D: to Y: for a volume labelled `BNW` with file system `CDFS`;
+`GameMain` retries once a second for 30 seconds. The drive letter (`0x00b4dee8`) is also where file opens fall back to
+when a file is missing from the install folder. The unprotected executable still contains this check.
+**Fix:** decompiled. A real disc or mounted image is still found on any drive; otherwise the install folder is
+accepted (`DiscFromInstallFolder`). `tools/install/install_game.py` copies everything the game reads from the disc
+(the `Audio` folder) into the install folder.
+
 ### Low-detail textures on cards with a lot of video memory
 
 **Symptom:** blurry textures and landscape on any modern graphics card.
@@ -64,14 +94,20 @@ misdetection does not change gameplay.
 2001 table lacks get the CPUID brand string instead of an uninitialised buffer, unknown vendors get a defined value,
 and the report's unbounded `sprintf`/`strcat` into 1,000/4,000/5,000-byte buffers are bounded.
 
+## Settings and saves
+
+Not a bug, but often reported as one: `LHLogR.dll`'s registry helpers default to `HKEY_CURRENT_USER` and the game
+only ever selects that root, so settings (`Software\Lionhead Studios Ltd\Black & White\BWSetup`: `ScreenW`,
+`ScreenH`, `ScreenD`, `FullScreen`, `detailidx`, ...) never need administrator rights. Profiles and saves go below the
+`GameDir` value of `Software\Lionhead Studios Ltd\Black & White` (read at `0x00715a20`); without it the game uses
+`\dev\black`, Lionhead's own development folder. `install_game.py` writes `GameDir`.
+
 ## Not fixed yet
 
 | Problem | What is known | Next step |
 |---|---|---|
 | Crash above 1080p / at high resolutions | Mode setting is `LHScreen::SetMode` (`0x00748d70` → `0x00748de0`); width/height are 16-bit there, so the limit is elsewhere (render buffers, interface layout or setup's mode list). | Reproduce under the launcher and decompile the faulting function. |
 | Windowed mode | `0x00747050` creates an 800×600 `WS_OVERLAPPEDWINDOW`; `SetMode` switches styles. | Decompile `LHWin.cpp`/`LHScreen.cpp` window handling. |
-| Settings need administrator rights | Settings live in `HKLM\...\Black & White\BWSetup` (read by `PCMain` at `0x005f2650`) through `LHLogR.dll`'s `Registry*` functions; non-elevated writes land in the registry VirtualStore. | Redirect to `HKCU` (or `BWDecomp.ini`) once `PCMain` is decompiled. |
-| Music requires the disc | Music banks are read from `audio/music/...` relative paths; the installer does not copy `Audio\`. | Copying the folder works today; decompile the bank lookup to search the install folder. |
 
 ## Official patches
 

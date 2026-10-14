@@ -19,6 +19,11 @@ namespace lhlib {
 /// that recovered members stay at the original positions.
 class LHScreen {
 public:
+    /// Closes LH3D, switches the display mode and restarts LH3D. Returns 0 on success, 3 when the mode could not be
+    /// set, or the error of the one-time DirectDraw initialisation.
+    [[nodiscard]] std::int32_t SetMode(std::int32_t width, std::int32_t height,
+                                       std::int32_t bitsPerPixel) noexcept;  // 0x00748d70
+
     /// Free local video memory in bytes, clamped to [0, MaxReportedVideoMemoryMB]. PCMain enables the low-detail
     /// texture path when this is below 13,000,000 and LH3DRender logs it.
     [[nodiscard]] std::int32_t GetAvailableVideoMemory() noexcept;  // 0x00749a70
@@ -59,6 +64,16 @@ struct LHScreenLayout {
 };
 
 BW_GLOBAL(LHScreen, g_screen, 0x00d5c100);
+/// Set until the first SetMode has initialised DirectDraw for the game window.
+BW_GLOBAL(std::int32_t, g_screenNeedsInitialise, 0x00b53800);
+BW_GLOBAL(HWND, g_mainWindow, 0x00d62f24);
+
+/// The colour depth SetMode actually uses: 16-bit requests become 32-bit when `promote16To32` is set, because
+/// current drivers no longer create a hardware Direct3D 7 device on a 16-bit display mode.
+[[nodiscard]] constexpr std::int32_t EffectiveColorDepth(std::int32_t requested, bool promote16To32) noexcept
+{
+    return promote16To32 && requested == 16 ? 32 : requested;
+}
 
 /// Clamps a DirectDraw byte count to what the game's signed 32-bit arithmetic can hold and to `limitMiB`
 /// (0 = no limit beyond INT32_MAX).

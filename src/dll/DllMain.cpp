@@ -7,6 +7,7 @@
 #include "core/Log.h"
 #include "core/Version.h"
 #include "core/Windows.h"
+#include "diagnostics/Diagnostics.h"
 #include "fixes/Fixes.h"
 
 #include <filesystem>
@@ -56,6 +57,7 @@ bool Attach(HMODULE self)
         return true;
     }
 
+    bw::diagnostics::Install(game, bw::GetConfig());
     bw::fixes::InstallAll(game, bw::GetConfig());
 
     const std::optional<bw::image::Section> text = bw::image::FindSection(game, ".text");

@@ -6,3 +6,6 @@
 
 # Generated at run time
 *.log
+
+# Python bytecode
+__pycache__/

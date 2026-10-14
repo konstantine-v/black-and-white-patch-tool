@@ -13,8 +13,9 @@ This repository contains **no game code or data**. You need your own copy of the
 | | |
 |---|---|
 | Original | `runblack.exe` 1.00 (English), linked 2001-03-09, MSVC 6.0 SP5, 12,722 functions, 963 RTTI classes |
-| Decompiled | 12 functions (`CPUCheck`, `LHScreen::GetAvailableVideoMemory`); run `.\build.ps1` for the current figure |
-| Fixes | SafeDisc, video-memory overflow, audio memory, DPI scaling, DEP, CPU detection ([docs/FIXES.md](docs/FIXES.md)) |
+| Decompiled | 14 functions (`CPUCheck`, `LHScreen::SetMode`, `LHScreen::GetAvailableVideoMemory`, `FindGameDisc`); run `.\build.ps1` for the current figure |
+| Fixes | SafeDisc, DirectX version check, 16-bit Direct3D crash, disc requirement, video-memory overflow, audio memory, DPI scaling, DEP, CPU detection ([docs/FIXES.md](docs/FIXES.md)) |
+| Status | Starts on Windows 10 and reaches the front end; see [CHANGELOG.md](CHANGELOG.md) |
 
 ## Supported executable
 
@@ -44,15 +45,19 @@ Python 3.10+ with `capstone==5.0.6` and `pefile==2024.8.26` (path in `BW_PYTHON`
 
 ## Install and play
 
-1. Install the game from the disc (Setup.exe) and copy the disc's `Audio` folder into the game folder if the installer
-   did not.
-2. Replace the installed `runblack.exe` with the disc's `crack\runblack.exe` (the supported, unprotected build).
-3. Copy `BWLaunch.exe`, `BWDecomp.dll` and `BWDecomp.ini` into the game folder.
-4. Start the game with `BWLaunch.exe`. Problems are logged to `BWDecomp.log` in the same folder.
+`tools/install/install_game.py` installs the game from your disc image without the 2001 InstallShield setup:
+cabinets (MD5-verified), the DLLs the setup copies from the disc root, the disc's `Audio` folder, the supported
+`runblack.exe`, and the `GameDir` registry value. With `--decomp` it also copies the decompilation.
 
-Resolution and detail level are still read from the game's registry key
-`HKLM\SOFTWARE\WOW6432Node\Lionhead Studios Ltd\Black & White\BWSetup` (`ScreenW`, `ScreenH`, `ScreenD`,
-`FullScreen`, `detailidx`), as written by the game's setup tool.
+```powershell
+python -I tools\install\install_game.py --iso BNW.iso --dest "G:\Games\Black & White" --decomp build\Release
+```
+
+Then start `BWLaunch.exe` in the install folder. Problems are logged to `BWDecomp.log` next to it; `BWDecomp.ini`
+switches fixes and diagnostics on or off. No disc and no administrator rights are needed.
+
+Settings are the game's own, in `HKEY_CURRENT_USER\Software\Lionhead Studios Ltd\Black & White\BWSetup` (`ScreenW`,
+`ScreenH`, `ScreenD`, `FullScreen`, `detailidx`); without them the game uses 800×600.
 
 ## Layout
 
@@ -62,6 +67,7 @@ Resolution and detail level are still read from the game's registry key
 | `src/game/black` | Decompiled game code, one file per original translation unit (`C:\dev\black\*.cpp`) |
 | `src/game/lhlib` | Decompiled Lionhead library code (`C:\DEV\Libs\LIONHEAD\lhlib\VER5.0\*.cpp`) |
 | `src/fixes` | Compatibility fixes outside decompiled functions (process settings, import patches) |
+| `src/diagnostics` | Run-time tracing without a debugger: exits, message boxes, exceptions, game debug output |
 | `src/dll`, `src/launcher` | `BWDecomp.dll` entry point and `BWLaunch.exe` |
 | `symbols/functions.csv` | Every original function: address, end, name, class, original source file, status |
 | `tools/` | Analysis and verification scripts (Python, static analysis only) |

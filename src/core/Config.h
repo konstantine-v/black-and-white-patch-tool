@@ -13,6 +13,9 @@ namespace bw {
 /// stays reproducible; see docs/FIXES.md for what each one changes.
 struct Config {
     // [Fixes]
+    bool directXVersionReport = true;            ///< DirectXVersionReport: answer the DirectX 7 start-up check.
+    bool discFromInstallFolder = true;           ///< DiscFromInstallFolder: play without the disc.
+    bool promoteColorDepth16To32 = true;         ///< ColorDepth32: run 16-bit modes at 32 bits.
     bool dpiAware = true;                        ///< DpiAware: opt out of Windows DPI virtualisation.
     bool executableSelfModifyingCode = true;     ///< ExecutableSelfModifyingCode: SELFMOD section runnable under DEP.
     std::uint32_t maxReportedPhysicalMemoryMiB = 512;  ///< MaxReportedPhysicalMemoryMB: 0 = unlimited.
@@ -20,6 +23,11 @@ struct Config {
 
     // [Hooks]
     std::vector<Address> disabledHooks;          ///< Disabled: original addresses that keep running original code.
+
+    // [Diagnostics]
+    bool traceExit = true;                       ///< TraceExit: log ExitProcess/PostQuitMessage/MessageBoxA callers.
+    bool traceExceptions = true;                 ///< TraceExceptions: log exceptions with a stack scan.
+    bool forwardDebugOutput = false;             ///< ForwardDebugOutput: copy the game's OutputDebugString to the log.
 
     // [Log]
     bool logDebug = false;                       ///< Debug: also log every installed hook.

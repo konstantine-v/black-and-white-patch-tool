@@ -58,6 +58,10 @@ std::vector<Address> ParseAddressList(std::wstring_view text)
 Config Config::Load(const std::filesystem::path& iniFile)
 {
     Config config;
+    config.directXVersionReport = ReadBool(iniFile, L"Fixes", L"DirectXVersionReport", config.directXVersionReport);
+    config.discFromInstallFolder =
+        ReadBool(iniFile, L"Fixes", L"DiscFromInstallFolder", config.discFromInstallFolder);
+    config.promoteColorDepth16To32 = ReadBool(iniFile, L"Fixes", L"ColorDepth32", config.promoteColorDepth16To32);
     config.dpiAware = ReadBool(iniFile, L"Fixes", L"DpiAware", config.dpiAware);
     config.executableSelfModifyingCode =
         ReadBool(iniFile, L"Fixes", L"ExecutableSelfModifyingCode", config.executableSelfModifyingCode);
@@ -65,6 +69,9 @@ Config Config::Load(const std::filesystem::path& iniFile)
         ReadUnsigned(iniFile, L"Fixes", L"MaxReportedPhysicalMemoryMB", config.maxReportedPhysicalMemoryMiB);
     config.maxReportedVideoMemoryMiB =
         ReadUnsigned(iniFile, L"Fixes", L"MaxReportedVideoMemoryMB", config.maxReportedVideoMemoryMiB);
+    config.traceExit = ReadBool(iniFile, L"Diagnostics", L"TraceExit", config.traceExit);
+    config.traceExceptions = ReadBool(iniFile, L"Diagnostics", L"TraceExceptions", config.traceExceptions);
+    config.forwardDebugOutput = ReadBool(iniFile, L"Diagnostics", L"ForwardDebugOutput", config.forwardDebugOutput);
     config.logDebug = ReadBool(iniFile, L"Log", L"Debug", config.logDebug);
 
     std::array<wchar_t, 4096> disabled{};
