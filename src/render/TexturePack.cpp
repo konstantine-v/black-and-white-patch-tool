@@ -8,6 +8,7 @@
 #include <wrl/client.h>
 
 #include <algorithm>
+#include <cctype>
 #include <format>
 #include <mutex>
 #include <unordered_map>
@@ -21,7 +22,10 @@ using Microsoft::WRL::ComPtr;
 
 struct State {
     Settings settings;
-    std::unordered_map<std::uint64_t, std::filesystem::path> replacements;
+    std::unordered_map<std::uint64_t, std::filesystem::path> replacementsByHash;
+    std::unordered_map<std::string, std::filesystem::path> replacementsByName;  // NormaliseName of the relative path
+    std::unordered_map<std::uint64_t, Source> sources;
+    std::size_t fullColourSources = 0;
     std::unordered_set<std::uint64_t> dumped;
     std::mutex mutex;
 };
@@ -122,7 +126,8 @@ void Initialise(const Settings& settings) noexcept
     State& state = GetState();
     std::lock_guard lock(state.mutex);
     state.settings = settings;
-    state.replacements.clear();
+    state.replacementsByHash.clear();
+    state.replacementsByName.clear();
     if (!settings.replace) {
         return;
     }
@@ -130,18 +135,27 @@ void Initialise(const Settings& settings) noexcept
     std::error_code error;
     for (auto it = std::filesystem::recursive_directory_iterator(folder, error);
          !error && it != std::filesystem::recursive_directory_iterator(); it.increment(error)) {
+        if (!it->is_regular_file(error) || !IsImageFile(it->path())) {
+            continue;
+        }
         std::uint64_t hash = 0;
-        if (it->is_regular_file(error) && IsImageFile(it->path()) &&
-            ParseHashName(it->path().filename().wstring(), hash)) {
-            const auto [existing, added] = state.replacements.emplace(hash, it->path());
+        if (ParseHashName(it->path().filename().wstring(), hash)) {
+            const auto [existing, added] = state.replacementsByHash.emplace(hash, it->path());
             if (!added) {
                 log::Warning("Textures: two replacements for {}; using {}", std::filesystem::path(HashName(hash)).string(),
                              existing->second.string());
             }
+            continue;
+        }
+        const std::string name = NormaliseName(it->path().lexically_relative(folder).string());
+        const auto [existing, added] = state.replacementsByName.emplace(name, it->path());
+        if (!added) {
+            log::Warning("Textures: two replacements for {}; using {}", name, existing->second.string());
         }
     }
-    if (!state.replacements.empty()) {
-        log::Info("Textures: {} replacements in {}", state.replacements.size(), folder.string());
+    const std::size_t count = state.replacementsByHash.size() + state.replacementsByName.size();
+    if (count != 0) {
+        log::Info("Textures: {} replacements in {}", count, folder.string());
     }
 }
 
@@ -149,7 +163,8 @@ bool Active() noexcept
 {
     State& state = GetState();
     std::lock_guard lock(state.mutex);
-    return state.settings.dump || !state.replacements.empty();
+    return state.settings.dump || !state.replacementsByHash.empty() || !state.replacementsByName.empty() ||
+           state.fullColourSources != 0;
 }
 
 std::uint64_t Hash(Format format, std::uint32_t width, std::uint32_t height, const std::uint8_t* bits,
@@ -210,6 +225,44 @@ bool ParseHashName(std::wstring_view fileName, std::uint64_t& hash) noexcept
     return true;
 }
 
+std::string NormaliseName(std::string_view path)
+{
+    std::string name(path);
+    std::replace(name.begin(), name.end(), '/', '\\');
+    std::transform(name.begin(), name.end(), name.begin(),
+                   [](char c) { return static_cast<char>(std::tolower(static_cast<unsigned char>(c))); });
+    while (name.starts_with(".\\")) {
+        name.erase(0, 2);
+    }
+    const std::size_t dot = name.find_last_of('.');
+    if (dot != std::string::npos && name.find('\\', dot) == std::string::npos) {
+        name.erase(dot);
+    }
+    return name;
+}
+
+void RegisterSource(std::uint64_t hash, Source source) noexcept
+{
+    State& state = GetState();
+    std::lock_guard lock(state.mutex);
+    Source& entry = state.sources[hash];
+    state.fullColourSources -= entry.image ? 1 : 0;
+    state.fullColourSources += source.image ? 1 : 0;
+    entry = std::move(source);
+}
+
+bool FindSource(std::uint64_t hash, Source& source) noexcept
+{
+    State& state = GetState();
+    std::lock_guard lock(state.mutex);
+    const auto it = state.sources.find(hash);
+    if (it == state.sources.end()) {
+        return false;
+    }
+    source = it->second;
+    return true;
+}
+
 bool WantsDump(std::uint64_t hash) noexcept
 {
     State& state = GetState();
@@ -217,7 +270,7 @@ bool WantsDump(std::uint64_t hash) noexcept
     return state.settings.dump && !state.dumped.contains(hash);
 }
 
-void Dump(std::uint64_t hash, Format format, const Image& image) noexcept
+void Dump(std::uint64_t hash, std::string_view name, Format format, const Image& image) noexcept
 {
     State& state = GetState();
     std::filesystem::path path;
@@ -226,10 +279,15 @@ void Dump(std::uint64_t hash, Format format, const Image& image) noexcept
         if (!state.settings.dump || !state.dumped.insert(hash).second) {
             return;
         }
-        const std::string formatName(Name(format));
-        path = state.settings.folder / L"Dump" /
-               std::format(L"{}_{}x{}_{}.png", HashName(hash), image.width, image.height,
-                           std::wstring(formatName.begin(), formatName.end()));
+        if (!name.empty()) {
+            path = state.settings.folder / L"Dump" / std::filesystem::path(std::string(name) + ".png");
+        }
+        else {
+            const std::string formatName(Name(format));
+            path = state.settings.folder / L"Dump" /
+                   std::format(L"{}_{}x{}_{}.png", HashName(hash), image.width, image.height,
+                               std::wstring(formatName.begin(), formatName.end()));
+        }
     }
     std::error_code error;
     if (std::filesystem::exists(path, error)) {
@@ -241,25 +299,21 @@ void Dump(std::uint64_t hash, Format format, const Image& image) noexcept
     }
 }
 
-bool HasReplacement(std::uint64_t hash) noexcept
+std::filesystem::path FindReplacement(std::uint64_t hash, std::string_view name) noexcept
 {
     State& state = GetState();
     std::lock_guard lock(state.mutex);
-    return state.replacements.contains(hash);
+    if (!name.empty()) {
+        if (const auto it = state.replacementsByName.find(std::string(name)); it != state.replacementsByName.end()) {
+            return it->second;
+        }
+    }
+    const auto it = state.replacementsByHash.find(hash);
+    return it != state.replacementsByHash.end() ? it->second : std::filesystem::path();
 }
 
-bool LoadReplacement(std::uint64_t hash, Image& image) noexcept
+bool LoadImage(const std::filesystem::path& path, Image& image) noexcept
 {
-    std::filesystem::path path;
-    {
-        State& state = GetState();
-        std::lock_guard lock(state.mutex);
-        const auto it = state.replacements.find(hash);
-        if (it == state.replacements.end()) {
-            return false;
-        }
-        path = it->second;
-    }
     if (!ReadImage(path, image)) {
         log::Warning("Textures: cannot read {}", path.string());
         return false;

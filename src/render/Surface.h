@@ -4,6 +4,7 @@
 #include "render/Gpu.h"
 
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace bw::render {
@@ -190,6 +191,10 @@ public:
     /// IDirect3DTexture2::Load: copies every mipmap level of `source` (same size and format) into this texture.
     HRESULT LoadFrom(Surface& source) noexcept;
 
+    /// What the game loaded into this surface (a texture pack source name, render/TexturePack.h). Whole-level copies
+    /// into textures register the copy's contents under this name.
+    void SetSourceName(std::string name) { m_sourceName = std::move(name); }
+
 private:
     Surface(DirectDraw& owner, const DDSURFACEDESC2& desc, SurfaceRole role, Format format) noexcept;
     ~Surface();
@@ -233,6 +238,7 @@ private:
     DDCOLORKEY m_sourceKey{};
     bool m_hasSourceKey = false;
     DWORD m_priority = 0;
+    std::string m_sourceName;
     DWORD m_lod = 0;
 
     bool m_locked = false;

@@ -200,3 +200,12 @@ TEST(MipmapsAverageTwoByTwo)
     CHECK_EQ(last.width, 1u);
     CHECK_EQ(last.argb[0], half.argb[0]);
 }
+
+TEST(TextureSourceNamesNormalise)
+{
+    CHECK_EQ(textures::NormaliseName(R"(.\Data\Textures\Sky.raw)"), std::string(R"(data\textures\sky)"));
+    CHECK_EQ(textures::NormaliseName("Data/Textures/Front_end_buttons.RAW"),
+             std::string(R"(data\textures\front_end_buttons)"));
+    CHECK_EQ(textures::NormaliseName(R"(segments\1a3)"), std::string(R"(segments\1a3)"));
+    CHECK_EQ(textures::NormaliseName(R"(data\v1.0\grass)"), std::string(R"(data\v1.0\grass)"));
+}

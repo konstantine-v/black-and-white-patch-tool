@@ -4,6 +4,18 @@ Versions follow [semantic versioning](https://semver.org/) while the decompilati
 increases with each wave of decompiled code or fixes, the patch version for corrections. The version is set in
 `CMakeLists.txt` and tagged in git as `vX.Y.Z`.
 
+## 0.10.0
+
+Texture packs by name, and full-colour file textures.
+
+- Decompiled the texture loaders `LoadRawTexture` (`0x0078cde0`), `LH3DTexture::LoadSegment` (`0x0078ded0`) and
+  `LoadCompressedTexture` (`0x007cc750`): they register what they load with the renderer.
+- Dumps and replacements by source name: `Textures\Replace\data\textures\sky.png`, `Textures\Replace\segments\2b.png`;
+  hash names still work for everything else.
+- `Data\Textures\*.raw` (24-bit with alpha files) are drawn at full colour instead of 16-bit (`FullPrecisionTextures`).
+- Textures redrawn every frame (object shadows) are no longer hashed or dumped.
+- Tested in a skirmish game with named 4x replacements for the sea and the village banners.
+
 ## 0.9.0
 
 Texture packs: replacement textures of any resolution in 32-bit colour.

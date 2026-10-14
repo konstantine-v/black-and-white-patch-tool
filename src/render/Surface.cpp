@@ -5,6 +5,7 @@
 #include "render/Device.h"
 #include "render/DirectDraw.h"
 #include "render/Pixels.h"
+#include "render/TexturePack.h"
 
 #include <algorithm>
 #include <cstring>
@@ -635,6 +636,10 @@ HRESULT Surface::CopyFrom(Surface& source, const RECT& sourceRect, const RECT& d
         }
         else if (source.m_role == SurfaceRole::Texture && source.GpuTexture() != nullptr) {
             source.GpuTexture()->CopyFullPrecision(source.m_level, *GpuTexture(), m_level);
+        }
+        std::uint64_t hash = 0;
+        if (!source.m_sourceName.empty() && m_level == 0 && GpuTexture()->TopLevelHash(hash)) {
+            textures::RegisterSource(hash, {source.m_sourceName, nullptr});
         }
     }
     return result;

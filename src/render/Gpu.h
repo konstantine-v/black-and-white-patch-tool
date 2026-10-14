@@ -58,6 +58,8 @@ public:
     /// Passes `level`'s full-precision contents, if it has any, on to `destinationLevel` of `destination` (a copy of
     /// the same size).
     void CopyFullPrecision(std::uint32_t level, Texture& destination, std::uint32_t destinationLevel) noexcept;
+    /// The texture-pack identity of the top level as it is now (render/TexturePack.h); false for formats without one.
+    [[nodiscard]] bool TopLevelHash(std::uint64_t& hash) noexcept;
     /// Uploads CPU changes to the GPU copy; done automatically before drawing.
     void Upload() noexcept;
     [[nodiscard]] std::uint32_t Levels() const noexcept { return m_levels; }
@@ -84,6 +86,7 @@ private:
     void* m_full = nullptr;        // IDirect3DTexture9*, D3DPOOL_DEFAULT, A8R8G8B8 (full precision only)
     void* m_replacement = nullptr; // IDirect3DTexture9*, a texture pack's image (shared, one reference held)
     std::uint64_t m_hash = 0;      // of the top level, when texture packs are active
+    std::uint64_t m_lastChange = 0;  // GetTickCount64 of the last top-level change seen by Upload
     std::uint32_t m_width;
     std::uint32_t m_height;
     std::uint32_t m_levels;

@@ -12,8 +12,9 @@ resolution, 32-bit colour with alpha. Settings are in `[Textures]` in `BWDecomp.
 2. Edit or upscale the image. Any size works: the game addresses textures in 0..1 coordinates, so a 1024x1024 image
    replaces a 256x256 one without changes to the game. Keep the layout (the game packs several images into one
    texture, and the models' coordinates point into it). Keep the aspect ratio.
-3. Save it in `Textures\Replace\` (subfolders are fine, e.g. one per pack) with a name starting with `bw_<hash>`, e.g.
-   `bw_32ab16257c935dbb_creature_tiger.png`. PNG, DDS, BMP, JPEG and TIFF are read through Windows Imaging Component.
+3. Save it in `Textures\Replace\` at the same relative path as the dump: a named texture as e.g.
+   `Replace\data\textures\sky.png` or `Replace\segments\2b.png`; a hash-named one anywhere below `Replace\` with a
+   name starting with `bw_<hash>`, e.g. `bw_32ab16257c935dbb_creature_tiger.png`. PNG, DDS, BMP, JPEG and TIFF are read through Windows Imaging Component.
 4. Set `Dump=0` again and start the game. `BWDecomp.log` lists how many replacements were found and logs each one when
    it is first drawn (`Textures: replaced bw_... with a 1024x1024 image`).
 
@@ -30,6 +31,20 @@ Details:
   address space). Check the GPU's limit for very large images (16384 on current GPUs; logged when exceeded).
 - With `Dump=0` and no files in `Textures\Replace\` the renderer does not hash textures at all.
 
+## Names (0.10.0)
+
+The game's texture loaders are decompiled (`src/game/lh3dlib/LH3DTexture.cpp`) and tell the renderer what they load,
+so these textures are dumped and replaced by name, whatever their contents' hash:
+
+| Name | Source | Notes |
+|---|---|---|
+| `data\textures\<file>` | `Data\Textures\*.raw`: 24-bit colour plus an 8-bit `<file>a.raw` alpha | Drawn at full 24-bit colour (the game converts them to 16-bit); dumps are full colour too |
+| `segments\<hex>` | DXT textures of the game's texture resource file (models, buildings, banners) | |
+| the file's path | other DDS files (citadel, save-game room) | |
+
+Textures the game builds in memory (creature skins, the landscape, the logo, clouds) keep hash names. Textures that
+change again within a quarter of a second (object shadows, redrawn every frame) are not dumped or replaced.
+
 ## What can be replaced
 
 The game keeps its textures in 256x256 pages and packs smaller images into them (`LH3DRender`'s texture cache). A page
@@ -37,12 +52,10 @@ can be replaced when its contents are the same every time:
 
 | Works | Does not work (yet) |
 |---|---|
-| Sky, creature skins, villager and building sheets, user-interface icon sheets, the front end's logos | Fonts: glyphs are added to a page in the order text first appears, so the page differs between runs |
-| | The landscape: its textures are blended on the CPU for the area in view, so they change constantly |
-| | Pages still being filled: a page that gains an image gets a new hash (the final state is the one to replace) |
+| Named textures (above); creature skins, logos, clouds by hash | Fonts: glyphs are added to a page in the order text first appears, so the page differs between runs |
+| The landscape by hash: each map (`.lnd`) holds its landscape pages as DXT3 textures; the hashes stay the same for a map | Object shadows (redrawn every frame) |
 
-Tested in 0.9.0: the creature skin page replaced with a 4x larger, recoloured image in the front end.
+Tested: 0.9.0 the creature skin page by hash; 0.10.0 `data\textures\sky` (the sea) and `segments\2b` (the village banners) by name, 4x larger, in a skirmish game.
 
-Replacing single images regardless of where the game packs them, fonts and landscape materials needs the game's texture
-loading and landscape blending decompiled (the source images before packing). That would also allow higher-resolution
-pages for packed images. Until then, page replacements are the supported way.
+Next: names and full colour for the landscape (`0x007627b0` loads a map's DXT3 pages into in-memory textures; naming
+them `landscape\<map>\<n>` needs the map's name), and names for the other in-memory textures (creature skins).

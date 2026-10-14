@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(BlackWhiteDecomp VERSION 0.9.0 LANGUAGES CXX)
+project(BlackWhiteDecomp VERSION 0.10.0 LANGUAGES CXX)
 
 if(NOT MSVC OR NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
     message(FATAL_ERROR "Build with MSVC for 32-bit x86 (-A Win32): the code runs inside the 32-bit runblack.exe.")
@@ -38,6 +38,7 @@ add_library(bw_game OBJECT
     src/game/black/PCMain.cpp
     src/game/lh3dlib/LH3DRender.cpp
     src/game/lh3dlib/LH3DSky.cpp
+    src/game/lh3dlib/LH3DTexture.cpp
     src/game/lhlib/LHMouse.cpp
     src/game/lhlib/LHScreen.cpp
     src/game/lhlib/LHWin.cpp

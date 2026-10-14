@@ -12,6 +12,7 @@
 #include <cstring>
 #include <new>
 #include <array>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -23,6 +24,7 @@ namespace {
 using Microsoft::WRL::ComPtr;
 
 constexpr std::uint32_t kStages = 8;
+constexpr std::uint64_t kAnimatedMilliseconds = 250;
 
 /// One ProbeDepth slot: an occlusion query and its latest answer.
 struct Probe {
@@ -61,8 +63,8 @@ struct Device {
     std::array<Probe, kDepthProbes> probes;
     bool queriesUnavailable = false;
 
-    /// Texture-pack images by content hash, shared by every texture with that content; null when unreadable.
-    std::unordered_map<std::uint64_t, ComPtr<IDirect3DTexture9>> replacements;
+    /// Texture-pack images by file, shared by every texture they replace; null when unreadable.
+    std::unordered_map<std::wstring, ComPtr<IDirect3DTexture9>> replacements;
 };
 
 Device* g_device = nullptr;
@@ -551,6 +553,18 @@ void Texture::ConvertToFullPrecision(std::uint32_t level) noexcept
     AsTexture(m_system)->UnlockRect(level);
 }
 
+bool Texture::TopLevelHash(std::uint64_t& hash) noexcept
+{
+    D3DLOCKED_RECT locked{};
+    if (!CanConvert(m_format, Format::A8R8G8B8) ||
+        FAILED(AsTexture(m_system)->LockRect(0, &locked, nullptr, D3DLOCK_READONLY))) {
+        return false;
+    }
+    hash = textures::Hash(m_format, m_width, m_height, static_cast<const std::uint8_t*>(locked.pBits), locked.Pitch);
+    AsTexture(m_system)->UnlockRect(0);
+    return true;
+}
+
 bool Texture::SetFullPrecision(std::uint32_t level, const std::uint32_t* argb, std::int32_t pitch) noexcept
 {
     if (level >= m_levels || !MakeFullPrecision()) {
@@ -593,7 +607,18 @@ void Texture::Upload() noexcept
     }
     ++g_statistics.textureUploads;
     if ((m_dirtyLevels & 1u) != 0 && textures::Active()) {
-        Identify();
+        // Textures the game redraws all the time (object shadows, every frame) are not assets: identifying them
+        // would hash every frame and dump thousands of images. A texture that changes again within a quarter of a
+        // second is left alone until it settles.
+        const std::uint64_t now = GetTickCount64();
+        if (now - m_lastChange < kAnimatedMilliseconds) {
+            m_hash = 0;
+            Release<IDirect3DTexture9>(m_replacement);
+        }
+        else {
+            Identify();
+        }
+        m_lastChange = now;
     }
     if (m_full != nullptr) {
         for (std::uint32_t level = 0; level < m_levels; ++level) {
@@ -611,23 +636,23 @@ void Texture::Upload() noexcept
 
 namespace {
 
-/// The texture pack's image for `hash` as a GPU texture with a full mipmap chain (cached), or null.
-IDirect3DTexture9* Replacement(std::uint64_t hash, bool alpha) noexcept
+/// A texture pack's image as a GPU texture with a full mipmap chain (cached by file), or null.
+IDirect3DTexture9* Replacement(const std::filesystem::path& path, bool alpha) noexcept
 {
     Device& d = *g_device;
-    if (const auto it = d.replacements.find(hash); it != d.replacements.end()) {
+    const std::wstring key = path.wstring() + (alpha ? L"" : L"|opaque");
+    if (const auto it = d.replacements.find(key); it != d.replacements.end()) {
         return it->second.Get();
     }
-    ComPtr<IDirect3DTexture9>& cached = d.replacements[hash];
+    ComPtr<IDirect3DTexture9>& cached = d.replacements[key];  // stays null when the file cannot be used
     textures::Image image;
-    if (!textures::LoadReplacement(hash, image)) {
+    if (!textures::LoadImage(path, image)) {
         return nullptr;
     }
     D3DCAPS9 caps{};
     d.device->GetDeviceCaps(&caps);
     if (image.width > caps.MaxTextureWidth || image.height > caps.MaxTextureHeight) {
-        log::Warning("Textures: {} is {}x{}; this GPU takes at most {}x{}",
-                     std::filesystem::path(textures::HashName(hash)).string(), image.width, image.height,
+        log::Warning("Textures: {} is {}x{}; this GPU takes at most {}x{}", path.string(), image.width, image.height,
                      caps.MaxTextureWidth, caps.MaxTextureHeight);
         return nullptr;
     }
@@ -674,8 +699,7 @@ IDirect3DTexture9* Replacement(std::uint64_t hash, bool alpha) noexcept
         return nullptr;
     }
     cached = gpu;
-    log::Info("Textures: replaced {} with a {}x{} image", std::filesystem::path(textures::HashName(hash)).string(),
-              width, height);
+    log::Info("Textures: using {} ({}x{})", path.string(), width, height);
     return cached.Get();
 }
 
@@ -692,21 +716,32 @@ void Texture::Identify() noexcept
     }
     const auto* bits = static_cast<const std::uint8_t*>(locked.pBits);
     const std::uint64_t hash = textures::Hash(m_format, m_width, m_height, bits, locked.Pitch);
-    if (hash != m_hash) {
-        m_hash = hash;
-        Release<IDirect3DTexture9>(m_replacement);
-        if (textures::WantsDump(hash)) {
+    if (hash == m_hash) {
+        AsTexture(m_system)->UnlockRect(0);
+        return;
+    }
+    m_hash = hash;
+    Release<IDirect3DTexture9>(m_replacement);
+
+    // A source with more colour than this texture's format (a 24-bit file) is shown at full colour.
+    textures::Source source;
+    (void)textures::FindSource(hash, source);
+    const bool fullColourSource =
+        source.image && source.image->width == m_width && source.image->height == m_height;
+    if (fullColourSource) {
+        (void)SetFullPrecision(0, source.image->argb.data(), static_cast<std::int32_t>(m_width * 4));
+    }
+
+    if (textures::WantsDump(hash)) try {
+        textures::Image image;
+        if (fullColourSource) {
+            image = *source.image;
+        }
+        else {
             // The colours as the game sees them, or the full-precision ones where the game decoded a DXT texture.
-            textures::Image image;
             image.width = m_width;
             image.height = m_height;
-            try {
-                image.argb.resize(std::size_t{m_width} * m_height);
-            }
-            catch (const std::bad_alloc&) {
-                AsTexture(m_system)->UnlockRect(0);
-                return;
-            }
+            image.argb.resize(std::size_t{m_width} * m_height);
             D3DLOCKED_RECT precise{};
             if ((m_preciseLevels & 1u) != 0 &&
                 SUCCEEDED(AsTexture(m_fullSystem)->LockRect(0, &precise, nullptr, D3DLOCK_READONLY))) {
@@ -717,13 +752,17 @@ void Texture::Identify() noexcept
             else {
                 ImageToArgb(m_format, bits, locked.Pitch, m_width, m_height, image.argb.data());
             }
-            textures::Dump(hash, m_format, image);
         }
-        if (textures::HasReplacement(hash)) {
-            if (IDirect3DTexture9* replacement = Replacement(hash, HasAlpha(m_format))) {
-                replacement->AddRef();
-                m_replacement = replacement;
-            }
+        textures::Dump(hash, source.name, m_format, image);
+    }
+    catch (const std::bad_alloc&) {
+        log::Warning("Textures: out of memory for a dump");
+    }
+
+    if (const std::filesystem::path path = textures::FindReplacement(hash, source.name); !path.empty()) {
+        if (IDirect3DTexture9* replacement = Replacement(path, HasAlpha(m_format))) {
+            replacement->AddRef();
+            m_replacement = replacement;
         }
     }
     AsTexture(m_system)->UnlockRect(0);
