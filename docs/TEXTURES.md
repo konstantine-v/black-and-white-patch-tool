@@ -7,7 +7,7 @@ resolution, 32-bit colour with alpha. Settings are in `[Textures]` in `BWDecomp.
 ## Making a replacement
 
 1. Set `Dump=1` and play through the scenes whose textures you want. Every distinct texture is saved once to
-   `Textures\Dump\` in the game folder as `bw_<hash>_<width>x<height>_<format>.png`, with its alpha channel. The hash
+   `Textures\Dump\` in the game folder, by name (see Names below) or as `bw_<hash>_<width>x<height>_<format>.png`, with its alpha channel. The hash
    identifies the texture's contents.
 2. Edit or upscale the image. Any size works: the game addresses textures in 0..1 coordinates, so a 1024x1024 image
    replaces a 256x256 one without changes to the game. Keep the layout (the game packs several images into one
@@ -16,7 +16,7 @@ resolution, 32-bit colour with alpha. Settings are in `[Textures]` in `BWDecomp.
    `Replace\data\textures\sky.png` or `Replace\segments\2b.png`; a hash-named one anywhere below `Replace\` with a
    name starting with `bw_<hash>`, e.g. `bw_32ab16257c935dbb_creature_tiger.png`. PNG, DDS, BMP, JPEG and TIFF are read through Windows Imaging Component.
 4. Set `Dump=0` again and start the game. `BWDecomp.log` lists how many replacements were found and logs each one when
-   it is first drawn (`Textures: replaced bw_... with a 1024x1024 image`).
+   it is first drawn (`Textures: using ...\sky.png (1024x1024)`).
 
 Details:
 
