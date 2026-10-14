@@ -1,0 +1,2 @@
+address,name,class,tu,notes
+0x0045d260,CPUCheck::EnumerateDisplayDevice,CPUCheck,,DirectDrawEnumerateA callback; Ghidra treats it as data
