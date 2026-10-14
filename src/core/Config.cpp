@@ -66,6 +66,10 @@ Config Config::Load(const std::filesystem::path& iniFile)
     config.dpiAware = ReadBool(iniFile, L"Fixes", L"DpiAware", config.dpiAware);
     config.executableSelfModifyingCode =
         ReadBool(iniFile, L"Fixes", L"ExecutableSelfModifyingCode", config.executableSelfModifyingCode);
+    config.closeRequestsQuit = ReadBool(iniFile, L"Fixes", L"CloseRequestsQuit", config.closeRequestsQuit);
+    config.minimisedWait = ReadBool(iniFile, L"Fixes", L"MinimisedWait", config.minimisedWait);
+    config.shutdownTimeoutSeconds =
+        ReadUnsigned(iniFile, L"Fixes", L"ShutdownTimeoutSeconds", config.shutdownTimeoutSeconds);
     config.maxReportedPhysicalMemoryMiB =
         ReadUnsigned(iniFile, L"Fixes", L"MaxReportedPhysicalMemoryMB", config.maxReportedPhysicalMemoryMiB);
     config.maxReportedVideoMemoryMiB =
@@ -73,6 +77,7 @@ Config Config::Load(const std::filesystem::path& iniFile)
     config.traceExit = ReadBool(iniFile, L"Diagnostics", L"TraceExit", config.traceExit);
     config.traceExceptions = ReadBool(iniFile, L"Diagnostics", L"TraceExceptions", config.traceExceptions);
     config.forwardDebugOutput = ReadBool(iniFile, L"Diagnostics", L"ForwardDebugOutput", config.forwardDebugOutput);
+    config.screenshotKey = ReadUnsigned(iniFile, L"Diagnostics", L"ScreenshotKey", config.screenshotKey);
     config.logDebug = ReadBool(iniFile, L"Log", L"Debug", config.logDebug);
 
     std::array<wchar_t, 4096> disabled{};

@@ -3,8 +3,10 @@
 #include "core/Image.h"
 #include "core/Log.h"
 #include "core/Patch.h"
+#include "diagnostics/Diagnostics.h"
 
 #include <algorithm>
+#include <atomic>
 
 namespace bw::fixes {
 
@@ -12,6 +14,9 @@ namespace {
 
 decltype(&::GlobalMemoryStatus) g_originalGlobalMemoryStatus = nullptr;
 std::uint32_t g_maxPhysicalMemoryMiB = 0;
+std::atomic_flag g_shutdownWatchdogStarted;
+std::uint32_t g_shutdownTimeoutSeconds = 0;
+constexpr std::uint32_t kMaxShutdownTimeoutSeconds = 3600;
 
 /// DSETUP.dll ordinal 11, DirectXSetupGetVersion.
 using DirectXSetupGetVersionFunction = INT(WINAPI*)(DWORD* version, DWORD* revision);
@@ -33,6 +38,16 @@ void WINAPI GlobalMemoryStatusClamped(MEMORYSTATUS* status)
 {
     g_originalGlobalMemoryStatus(status);
     ClampMemoryStatus(*status, g_maxPhysicalMemoryMiB);
+}
+
+DWORD WINAPI ShutdownWatchdog(void* /*unused*/)
+{
+    Sleep(g_shutdownTimeoutSeconds * 1000);
+    log::Error("Shutdown still running {} s after the quit request; ending the process (ShutdownTimeoutSeconds)",
+               g_shutdownTimeoutSeconds);
+    diagnostics::LogThreadStacks();
+    TerminateProcess(GetCurrentProcess(), kShutdownWatchdogExitCode);
+    return 0;
 }
 
 }  // namespace
@@ -119,6 +134,20 @@ void InstallPhysicalMemoryReport(HMODULE game, std::uint32_t maxMiB) noexcept
         return;
     }
     log::Info("Fix MaxReportedPhysicalMemoryMB: physical memory reported as at most {} MB", maxMiB);
+}
+
+void StartShutdownWatchdog(std::uint32_t seconds) noexcept
+{
+    if (g_shutdownWatchdogStarted.test_and_set()) {
+        return;
+    }
+    g_shutdownTimeoutSeconds = std::min(seconds, kMaxShutdownTimeoutSeconds);
+    const HANDLE thread = CreateThread(nullptr, 0, &ShutdownWatchdog, nullptr, 0, nullptr);
+    if (thread == nullptr) {
+        log::Warning("Fix ShutdownTimeoutSeconds: cannot start the watchdog ({})", GetLastError());
+        return;
+    }
+    CloseHandle(thread);
 }
 
 void ClampMemoryStatus(MEMORYSTATUS& status, std::uint32_t maxMiB) noexcept

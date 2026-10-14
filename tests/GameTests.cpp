@@ -3,6 +3,7 @@
 #include "Test.h"
 
 #include "core/Hook.h"
+#include "diagnostics/Screenshot.h"
 #include "fixes/Fixes.h"
 #include "game/black/CPUCheck.h"
 #include "game/black/PCMain.h"
@@ -134,6 +135,10 @@ TEST(HooksMatchOriginalConventions)
         {0x00748d70, Thiscall, 12}, // LHScreen::SetMode: ret 0xc
         {0x00784520, Cdecl, 0},     // LH3DRender::Start
         {0x00749a70, Thiscall, 0},  // LHScreen::GetAvailableVideoMemory: ret
+        {0x007496c0, Thiscall, 4},  // LHScreen::Flip: ret 4
+        {0x00746e60, Thiscall, 0},  // LHWin::RequestQuit: ret
+        {0x00746f00, Cdecl, 0},     // PumpMessages
+        {0x00746fc0, Cdecl, 0},     // RegisterWindowClass
     };
     for (const Expected& hook : expected) {
         const bw::HookDescriptor* registered = FindHook(hook.address);
@@ -172,4 +177,70 @@ TEST(FallbackModesPreferSameAspectThenSize)
         CHECK(ranked[2] == (DisplayMode{1920, 1440}));  // 4:3, larger than 640x480
         CHECK(ranked[3] == (DisplayMode{640, 480}));
     }
+}
+
+TEST(ScreenshotChannelsScaleToEightBits)
+{
+    using bw::diagnostics::ExtractChannel;
+    CHECK_EQ(ExtractChannel(0x00ff8040, 0x00ff0000), 0xffu);
+    CHECK_EQ(ExtractChannel(0x00ff8040, 0x0000ff00), 0x80u);
+    CHECK_EQ(ExtractChannel(0x00ff8040, 0x000000ff), 0x40u);
+    // RGB 565: full red, half green, no blue.
+    CHECK_EQ(ExtractChannel(0xf800 | (31 << 5), 0xf800), 255u);
+    CHECK_EQ(ExtractChannel(0xf800 | (31 << 5), 0x07e0), 125u);  // 31/63 * 255 = 125.5
+    CHECK_EQ(ExtractChannel(0xf800 | (31 << 5), 0x001f), 0u);
+}
+
+TEST(ScreenshotChecksums)
+{
+    const std::uint8_t iend[] = {'I', 'E', 'N', 'D'};
+    CHECK_EQ(bw::diagnostics::Crc32(iend), 0xae426082u);
+    const std::uint8_t wikipedia[] = {'W', 'i', 'k', 'i', 'p', 'e', 'd', 'i', 'a'};
+    CHECK_EQ(bw::diagnostics::Adler32(wikipedia), 0x11e60398u);
+}
+
+TEST(ScreenshotPngLayout)
+{
+    const std::uint8_t rgb[] = {255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255};
+    const std::vector<std::uint8_t> png = bw::diagnostics::EncodePng(2, 2, rgb);
+    const std::uint8_t signature[] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
+    CHECK(std::equal(std::begin(signature), std::end(signature), png.begin()));
+    // IHDR: length 13, width 2 and height 2 big-endian, 8 bits per channel, RGB.
+    CHECK_EQ(png[11], 13u);
+    CHECK_EQ(png[19], 2u);
+    CHECK_EQ(png[23], 2u);
+    CHECK_EQ(png[24], 8u);
+    CHECK_EQ(png[25], 2u);
+    // IDAT holds zlib header (2) + one stored block (5 + two rows of 7) + Adler-32 (4) = 25 bytes.
+    CHECK_EQ(png[33], 0u);
+    CHECK_EQ(png[36], 25u);
+    // Ends with the IEND chunk.
+    const std::uint8_t end[] = {0, 0, 0, 0, 'I', 'E', 'N', 'D', 0xae, 0x42, 0x60, 0x82};
+    CHECK(std::equal(std::begin(end), std::end(end), png.end() - 12));
+}
+
+TEST(ShutdownWatchdogEndsAStalledProcess)
+{
+    std::wstring self(MAX_PATH, L'\0');
+    self.resize(GetModuleFileNameW(nullptr, self.data(), static_cast<DWORD>(self.size())));
+    std::wstring commandLine = L"\"" + self + L"\" --stalled-shutdown";
+    STARTUPINFOW startup{};
+    startup.cb = sizeof startup;
+    PROCESS_INFORMATION process{};
+    const bool started = CreateProcessW(self.c_str(), commandLine.data(), nullptr, nullptr, FALSE, 0, nullptr,
+                                        nullptr, &startup, &process) != FALSE;
+    CHECK(started);
+    if (!started) {
+        return;
+    }
+    const DWORD waited = WaitForSingleObject(process.hProcess, 15'000);
+    CHECK_EQ(waited, static_cast<DWORD>(WAIT_OBJECT_0));
+    if (waited != WAIT_OBJECT_0) {
+        TerminateProcess(process.hProcess, 0);
+    }
+    DWORD exitCode = 0;
+    GetExitCodeProcess(process.hProcess, &exitCode);
+    CHECK_EQ(exitCode, bw::fixes::kShutdownWatchdogExitCode);
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
 }

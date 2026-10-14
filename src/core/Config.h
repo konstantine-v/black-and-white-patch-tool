@@ -19,6 +19,9 @@ struct Config {
     bool displayModeFallback = true;             ///< DisplayModeFallback: step down when Direct3D refuses a mode.
     bool dpiAware = true;                        ///< DpiAware: opt out of Windows DPI virtualisation.
     bool executableSelfModifyingCode = true;     ///< ExecutableSelfModifyingCode: SELFMOD section runnable under DEP.
+    bool closeRequestsQuit = true;               ///< CloseRequestsQuit: WM_CLOSE quits like Alt+F4.
+    bool minimisedWait = true;                   ///< MinimisedWait: idle while minimised; quitting works.
+    std::uint32_t shutdownTimeoutSeconds = 60;   ///< ShutdownTimeoutSeconds: end a stalled quit; 0 = never.
     std::uint32_t maxReportedPhysicalMemoryMiB = 512;  ///< MaxReportedPhysicalMemoryMB: 0 = unlimited.
     std::uint32_t maxReportedVideoMemoryMiB = 1024;    ///< MaxReportedVideoMemoryMB: 0 = only clamp to INT32_MAX.
 
@@ -29,6 +32,7 @@ struct Config {
     bool traceExit = true;                       ///< TraceExit: log ExitProcess/PostQuitMessage/MessageBoxA callers.
     bool traceExceptions = true;                 ///< TraceExceptions: log exceptions with a stack scan.
     bool forwardDebugOutput = false;             ///< ForwardDebugOutput: copy the game's OutputDebugString to the log.
+    std::uint32_t screenshotKey = 0;             ///< ScreenshotKey: virtual-key code that saves a screenshot; 0 = none.
 
     // [Log]
     bool logDebug = false;                       ///< Debug: also log every installed hook.

@@ -3,6 +3,7 @@
 #include "core/Config.h"
 #include "core/Hook.h"
 #include "core/Log.h"
+#include "diagnostics/Screenshot.h"
 #include "game/lh3dlib/LH3DRender.h"
 
 #include <ddraw.h>
@@ -10,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <utility>
 
 namespace lhlib {
 
@@ -24,6 +26,13 @@ inline constexpr bw::ThiscallFunction<0x00748de0, std::int32_t(LHScreen*, std::i
 // LH3DRender::Close / LH3DRender::Start, called through their jump thunks as the original does.
 inline constexpr bw::CdeclFunction<0x007cc7e0, void()> CloseRenderer{};
 inline constexpr bw::CdeclFunction<0x007cc7d0, std::int32_t()> StartRenderer{};
+inline constexpr bw::ThiscallFunction<0x00748b30, std::int32_t(LHScreen*, std::int32_t)> LockOriginal{};
+inline constexpr bw::ThiscallFunction<0x00748c00, std::int32_t(LHScreen*)> UnlockOriginal{};
+inline constexpr bw::ThiscallFunction<0x007497a0, void(LHScreen*)> RestoreSurfacesOriginal{};
+inline constexpr bw::ThiscallFunction<0x00749340, std::int32_t(LHScreen*, std::int32_t, std::int32_t)>
+    AfterFlip00749340{};
+/// SELFMOD (0x00ee0285): patches the software rasteriser's four instructions that address the back buffer.
+inline constexpr bw::CdeclFunction<0x00ee0285, void(void*)> SetRasteriserTarget{};
 
 constexpr std::int32_t kSetModeFailed = 3;
 constexpr std::size_t kMaxFallbackAttempts = 6;
@@ -153,7 +162,52 @@ std::int32_t LHScreen::GetAvailableVideoMemory() noexcept
     return ClampVideoMemory(free, bw::GetConfig().maxReportedVideoMemoryMiB);
 }
 
+std::int32_t LHScreen::Flip(std::int32_t swapBuffers) noexcept
+{
+    if (m_locked == 0 && bw::diagnostics::ScreenshotRequested()) {
+        bw::diagnostics::SaveScreenshot(m_backSurface);
+    }
+
+    if (m_windowed != 0) {
+        RECT target{m_windowX, m_windowY, m_windowX + m_width, m_windowY + m_height};
+        m_primarySurface->Blt(&target, m_backSurface, nullptr, DDBLT_WAIT, nullptr);
+    }
+    else {
+        m_primarySurface->Flip(nullptr, m_flipFlags);
+    }
+
+    if (swapBuffers != 0) {
+        if (m_windowed == 0) {
+            // The flip exchanged the surfaces' memory: keep the software rasteriser drawing into the back buffer.
+            std::swap(m_frontPixels, m_backPixels);
+            std::swap(m_pitchPixels, m_backPitchPixels);
+            SetRasteriserTarget(m_backPixels);
+        }
+        AfterFlip00749340(this, 0, 0);
+    }
+    if (Lock(0) == 0) {
+        Unlock();
+    }
+    return 0;
+}
+
+std::int32_t LHScreen::Lock(std::int32_t unknown) noexcept
+{
+    return LockOriginal(this, unknown);
+}
+
+std::int32_t LHScreen::Unlock() noexcept
+{
+    return UnlockOriginal(this);
+}
+
+void LHScreen::RestoreSurfaces() noexcept
+{
+    RestoreSurfacesOriginal(this);
+}
+
 BW_HOOK_METHOD(0x00748d70, LHScreen, SetMode);
+BW_HOOK_METHOD(0x007496c0, LHScreen, Flip);
 BW_HOOK_METHOD(0x00749a70, LHScreen, GetAvailableVideoMemory);
 
 }  // namespace lhlib

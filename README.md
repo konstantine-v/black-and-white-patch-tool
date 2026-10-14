@@ -13,9 +13,9 @@ This repository contains **no game code or data**. You need your own copy of the
 | | |
 |---|---|
 | Original | `runblack.exe` 1.00 (English), linked 2001-03-09, MSVC 6.0 SP5, 12,722 functions, 963 RTTI classes |
-| Decompiled | 15 functions (`CPUCheck`, `LHScreen::SetMode`, `LHScreen::GetAvailableVideoMemory`, `LH3DRender::Start`, `FindGameDisc`); run `.\build.ps1` for the current figure |
-| Fixes | SafeDisc, DirectX version check, 16-bit Direct3D crash, high-resolution crash, disc requirement, video-memory overflow, audio memory, DPI scaling, DEP, CPU detection ([docs/FIXES.md](docs/FIXES.md)) |
-| Status | Starts on Windows 10 and reaches the front end; see [CHANGELOG.md](CHANGELOG.md) |
+| Decompiled | 19 functions (`CPUCheck`, `LHScreen::SetMode`/`Flip`/`GetAvailableVideoMemory`, `LHWin` quit handling and message pump, `LH3DRender::Start`, `FindGameDisc`); run `.\build.ps1` for the current figure |
+| Fixes | SafeDisc, DirectX version check, 16-bit Direct3D crash, high-resolution crash, hangs on quitting, disc requirement, video-memory overflow, audio memory, DPI scaling, DEP, CPU detection ([docs/FIXES.md](docs/FIXES.md)) |
+| Status | Plays on Windows 10 and quits cleanly; see [CHANGELOG.md](CHANGELOG.md) |
 
 ## Supported executable
 
@@ -60,6 +60,9 @@ Settings are the game's own, in `HKEY_CURRENT_USER\Software\Lionhead Studios Ltd
 `ScreenH`, `ScreenD`, `FullScreen`, `detailidx`); without them the game uses 800×600. Widths up to 2048 render
 natively (e.g. 1920×1080, 1920×1440); wider modes fall back to the largest one that works.
 
+Print Screen cannot capture the full-screen game. Set `ScreenshotKey` in `BWDecomp.ini` (e.g. `123` for F12) to
+save PNG screenshots to `Screenshots\` in the game folder; `tools/screenshot.py` does the same from outside.
+
 ## Layout
 
 | Path | Contents |
@@ -68,7 +71,7 @@ natively (e.g. 1920×1080, 1920×1440); wider modes fall back to the largest one
 | `src/game/black` | Decompiled game code, one file per original translation unit (`C:\dev\black\*.cpp`) |
 | `src/game/lhlib` | Decompiled Lionhead library code (`C:\DEV\Libs\LIONHEAD\lhlib\VER5.0\*.cpp`) |
 | `src/fixes` | Compatibility fixes outside decompiled functions (process settings, import patches) |
-| `src/diagnostics` | Run-time tracing without a debugger: exits, message boxes, exceptions, game debug output |
+| `src/diagnostics` | Run-time tracing without a debugger: exits, message boxes, exceptions, thread stacks, game debug output, screenshots |
 | `src/dll`, `src/launcher` | `BWDecomp.dll` entry point and `BWLaunch.exe` |
 | `symbols/functions.csv` | Every original function: address, end, name, class, original source file, status |
 | `tools/` | Analysis and verification scripts (Python, static analysis only) |

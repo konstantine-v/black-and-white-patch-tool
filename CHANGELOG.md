@@ -4,6 +4,21 @@ Versions follow [semantic versioning](https://semver.org/) while the decompilati
 increases with each wave of decompiled code or fixes, the patch version for corrections. The version is set in
 `CMakeLists.txt` and tagged in git as `vX.Y.Z`.
 
+## 0.4.0
+
+Quitting always works.
+
+- Decompiled `LHWin::RequestQuit`, `RegisterWindowClass` and the message pump (`LHWin.cpp`), and `LHScreen::Flip`;
+  19 functions in total.
+- Fixed: closing the game while it was minimised or after Alt+Tab hung it with a CPU core at 100 %; it now quits, and
+  idles while minimised (`MinimisedWait`).
+- Fixed: `WM_CLOSE` (e.g. `taskkill`) destroyed the window and left the game running; it now quits like Alt+F4
+  (`CloseRequestsQuit`).
+- Shutdown watchdog: a quit that has not finished after `ShutdownTimeoutSeconds` (60) logs every thread's stack and
+  ends the process.
+- Screenshots of the full-screen game as PNG (`ScreenshotKey`, `tools/screenshot.py`).
+- `tools/threads.py`: registers and return addresses of every thread of a running (hung) game.
+
 ## 0.3.0
 
 High resolutions no longer crash the game.

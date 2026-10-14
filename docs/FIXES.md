@@ -47,6 +47,34 @@ and returns 0. `LHScreen::SetMode` then tries the display's smaller modes, same 
 (`DisplayModeFallback`), so 2560×1440 runs at 1920×1080 instead of crashing. Rendering above 2048 pixels needs a
 renderer that does not go through Direct3D 7; that is planned with the decompilation of LH3D.
 
+### Hang when closing a minimised game
+
+**Symptom:** after Alt+Tab (or minimising), closing the game from the taskbar does nothing; the process keeps one CPU
+core busy and has to be ended in Task Manager.
+**Cause:** when the window is deactivated, `LHScreen` suspends its surfaces (`0x00749780` sets `0x00d63410`) and the
+frame flip enters the message pump `0x00746f00`, which spins on `PeekMessage` until the window is restored
+(`SC_RESTORE` → `0x007497a0`). Closing sends `SC_CLOSE`, which only sets the quit flag (`LHWin::RequestQuit`,
+`0x00746e60`) that the game loop polls; the game loop never runs again, so the game never quits. A window destroyed
+while suspended never restores either.
+**Fix:** the pump is decompiled (`src/game/lhlib/LHWin.cpp`). While suspended it waits for messages
+(`MsgWaitForMultipleObjects`) instead of spinning, and returns to the game loop once a quit is requested or the window
+is gone (`MinimisedWait`).
+
+### `WM_CLOSE` leaves the game running without a window
+
+**Symptom:** closing the game with `taskkill` (without `/F`) or another tool that sends `WM_CLOSE` leaves a
+windowless process running (or hung).
+**Cause:** the window procedure (`0x007474e0`) handles Alt+F4 (`SC_CLOSE`) as a quit request but passes `WM_CLOSE` to
+`DefWindowProc`, which destroys the window; nothing tells the game loop.
+**Fix:** `RegisterWindowClass` (`0x00746fc0`) is decompiled and registers a wrapper procedure that turns `WM_CLOSE`
+into the same quit request as Alt+F4 and passes every other message to the original (`CloseRequestsQuit`).
+
+### Shutdown safety net
+
+Not a bug in itself: if the game is still running `ShutdownTimeoutSeconds` (default 60) after it was asked to quit,
+`BWDecomp` logs the stack of every thread to `BWDecomp.log` and ends the process, so a shutdown problem that is not
+fixed yet never needs Task Manager and leaves the evidence for fixing it. A normal quit takes under a second.
+
 ### Disc required
 
 **Symptom:** without the disc in a drive, the game sits on a black screen for 30 seconds and quits.
@@ -88,8 +116,8 @@ its first window (`DpiAware`).
 ### Self-modifying rasteriser code under DEP
 
 **Symptom:** access violation on the first frame when DEP is enforced for all programs.
-**Cause:** the software rasteriser rewrites immediates in its own code for speed (`0x00ee0285` stores the surface pitch
-into four instructions; called from `0x00748bcb` and `0x00749750`). That code lives in the `SELFMOD` section, which is
+**Cause:** the software rasteriser rewrites immediates in its own code for speed (`0x00ee0285` stores the back buffer's
+address into four instructions; called from `0x00748bcb` and `0x00749750`). That code lives in the `SELFMOD` section, which is
 flagged as read/write *data* (`0xC0000040`), not executable. The image does not opt into DEP, so the default policy
 spares it, but the "AlwaysOn"/"OptOut" policies do not.
 **Fix:** `SELFMOD` is made `PAGE_EXECUTE_READWRITE` at start-up (`ExecutableSelfModifyingCode`).
@@ -118,7 +146,7 @@ only ever selects that root, so settings (`Software\Lionhead Studios Ltd\Black &
 | Problem | What is known | Next step |
 |---|---|---|
 | Native resolutions wider than 2048 | Direct3D 7 refuses such render targets (see above); the game falls back to a smaller mode. | Decompile LH3D's device layer and render through Direct3D 9/11, or render at ≤ 2048 and scale. |
-| Windowed mode | `0x00747050` creates an 800×600 `WS_OVERLAPPEDWINDOW`; `SetMode` switches styles. | Decompile `LHWin.cpp`/`LHScreen.cpp` window handling. |
+| Windowed mode | `0x00747050` creates an 800×600 `WS_OVERLAPPEDWINDOW`; `SetMode` switches styles; `LHScreen::Flip` (decompiled) already presents into the client area when `0x64` is set. | Decompile `LHWin.cpp`/`LHScreen.cpp` window handling. |
 
 ## Official patches
 
