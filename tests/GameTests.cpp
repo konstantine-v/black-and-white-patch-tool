@@ -136,9 +136,14 @@ TEST(HooksMatchOriginalConventions)
         {0x00784520, Cdecl, 0},     // LH3DRender::Start
         {0x00749a70, Thiscall, 0},  // LHScreen::GetAvailableVideoMemory: ret
         {0x007496c0, Thiscall, 4},  // LHScreen::Flip: ret 4
+        {0x007484a0, Thiscall, 4},  // LHScreen::SetFullScreen: ret 4
         {0x00746e60, Thiscall, 0},  // LHWin::RequestQuit: ret
         {0x00746f00, Cdecl, 0},     // PumpMessages
         {0x00746fc0, Cdecl, 0},     // RegisterWindowClass
+        {0x00747ee0, Cdecl, 0},     // ResizeWindowToMode
+        {0x00746eb0, Cdecl, 0},     // ShowWindowMenu
+        {0x00747470, Cdecl, 0},     // GetCursorFramePosition
+        {0x0074c0f0, Thiscall, 4},  // LHMouse::SetPosition: ret 4
     };
     for (const Expected& hook : expected) {
         const bw::HookDescriptor* registered = FindHook(hook.address);
@@ -243,4 +248,38 @@ TEST(ShutdownWatchdogEndsAStalledProcess)
     CHECK_EQ(exitCode, bw::fixes::kShutdownWatchdogExitCode);
     CloseHandle(process.hThread);
     CloseHandle(process.hProcess);
+}
+
+TEST(FrameFitsWindowKeepingAspectRatio)
+{
+    using lhlib::FitFrame;
+    // 1920x1080 in a 2560x1440 window: exact 4/3 scale, no bars.
+    RECT r = FitFrame({1920, 1080}, {2560, 1440}, true);
+    CHECK(r.left == 0 && r.top == 0 && r.right == 2560 && r.bottom == 1440);
+    // 4:3 in 16:9: pillarbox.
+    r = FitFrame({1600, 1200}, {2560, 1440}, true);
+    CHECK(r.left == 320 && r.top == 0 && r.right == 2240 && r.bottom == 1440);
+    // 16:9 in 16:10: letterbox.
+    r = FitFrame({1920, 1080}, {1920, 1200}, true);
+    CHECK(r.left == 0 && r.top == 60 && r.right == 1920 && r.bottom == 1140);
+    // Stretching ignores the aspect ratio.
+    r = FitFrame({1600, 1200}, {2560, 1440}, false);
+    CHECK(r.left == 0 && r.top == 0 && r.right == 2560 && r.bottom == 1440);
+}
+
+TEST(FrameMappingRoundTrips)
+{
+    const lhlib::DisplayMode frame{1920, 1080};
+    const RECT rect = lhlib::FitFrame(frame, {2560, 1440}, true);
+    for (const POINT p : {POINT{0, 0}, POINT{1919, 1079}, POINT{960, 540}, POINT{17, 1033}}) {
+        const POINT client = lhlib::MapFromFrame(p, rect, frame);
+        const POINT back = lhlib::MapToFrame(client, rect, frame);
+        CHECK(back.x == p.x && back.y == p.y);
+    }
+    // Points in the bars or outside the window clamp to the frame's edge.
+    const RECT pillar = lhlib::FitFrame({1600, 1200}, {2560, 1440}, true);
+    POINT p = lhlib::MapToFrame({10, -5}, pillar, {1600, 1200});
+    CHECK(p.x == 0 && p.y == 0);
+    p = lhlib::MapToFrame({2550, 2000}, pillar, {1600, 1200});
+    CHECK(p.x == 1599 && p.y == 1199);
 }

@@ -13,8 +13,8 @@ This repository contains **no game code or data**. You need your own copy of the
 | | |
 |---|---|
 | Original | `runblack.exe` 1.00 (English), linked 2001-03-09, MSVC 6.0 SP5, 12,722 functions, 963 RTTI classes |
-| Decompiled | 19 functions (`CPUCheck`, `LHScreen::SetMode`/`Flip`/`GetAvailableVideoMemory`, `LHWin` quit handling and message pump, `LH3DRender::Start`, `FindGameDisc`); run `.\build.ps1` for the current figure |
-| Fixes | SafeDisc, DirectX version check, 16-bit Direct3D crash, high-resolution crash, hangs on quitting, disc requirement, video-memory overflow, audio memory, DPI scaling, DEP, CPU detection ([docs/FIXES.md](docs/FIXES.md)) |
+| Decompiled | 24 functions (`CPUCheck`, `LHScreen` mode setting and presentation, `LHWin` window, quit and message handling, `LHMouse::SetPosition`, `LH3DRender::Start`, `FindGameDisc`); run `.\build.ps1` for the current figure |
+| Fixes | SafeDisc, DirectX version check, 16-bit Direct3D crash, high-resolution crash, windowed and borderless modes with scaling, hangs on quitting, disc requirement, video-memory overflow, audio memory, DPI scaling, DEP, CPU detection ([docs/FIXES.md](docs/FIXES.md)) |
 | Status | Plays on Windows 10 and quits cleanly; see [CHANGELOG.md](CHANGELOG.md) |
 
 ## Supported executable
@@ -59,6 +59,11 @@ switches fixes and diagnostics on or off. No disc and no administrator rights ar
 Settings are the game's own, in `HKEY_CURRENT_USER\Software\Lionhead Studios Ltd\Black & White\BWSetup` (`ScreenW`,
 `ScreenH`, `ScreenD`, `FullScreen`, `detailidx`); without them the game uses 800×600. Widths up to 2048 render
 natively (e.g. 1920×1080, 1920×1440); wider modes fall back to the largest one that works.
+
+`[Display] WindowMode` in `BWDecomp.ini` chooses exclusive full screen (0, the original), a resizable window (1) or a
+borderless window covering the screen (2). In modes 1 and 2 the picture is scaled to the window, so on a display
+wider than 2048 pixels mode 2 fills the screen from a 1920×1080 render without changing the display mode, and
+Alt+Tab is instant.
 
 Print Screen cannot capture the full-screen game. Set `ScreenshotKey` in `BWDecomp.ini` (e.g. `123` for F12) to
 save PNG screenshots to `Screenshots\` in the game folder; `tools/screenshot.py` does the same from outside.

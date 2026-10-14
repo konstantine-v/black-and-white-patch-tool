@@ -74,6 +74,12 @@ Config Config::Load(const std::filesystem::path& iniFile)
         ReadUnsigned(iniFile, L"Fixes", L"MaxReportedPhysicalMemoryMB", config.maxReportedPhysicalMemoryMiB);
     config.maxReportedVideoMemoryMiB =
         ReadUnsigned(iniFile, L"Fixes", L"MaxReportedVideoMemoryMB", config.maxReportedVideoMemoryMiB);
+    const std::uint32_t windowMode =
+        ReadUnsigned(iniFile, L"Display", L"WindowMode", static_cast<std::uint32_t>(config.windowMode));
+    config.windowMode = windowMode <= static_cast<std::uint32_t>(WindowMode::Borderless)
+                            ? static_cast<WindowMode>(windowMode)
+                            : WindowMode::FullScreen;
+    config.keepAspectRatio = ReadBool(iniFile, L"Display", L"KeepAspectRatio", config.keepAspectRatio);
     config.traceExit = ReadBool(iniFile, L"Diagnostics", L"TraceExit", config.traceExit);
     config.traceExceptions = ReadBool(iniFile, L"Diagnostics", L"TraceExceptions", config.traceExceptions);
     config.forwardDebugOutput = ReadBool(iniFile, L"Diagnostics", L"ForwardDebugOutput", config.forwardDebugOutput);

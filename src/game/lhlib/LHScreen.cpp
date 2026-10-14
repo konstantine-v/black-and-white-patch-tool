@@ -31,6 +31,10 @@ inline constexpr bw::ThiscallFunction<0x00748c00, std::int32_t(LHScreen*)> Unloc
 inline constexpr bw::ThiscallFunction<0x007497a0, void(LHScreen*)> RestoreSurfacesOriginal{};
 inline constexpr bw::ThiscallFunction<0x00749340, std::int32_t(LHScreen*, std::int32_t, std::int32_t)>
     AfterFlip00749340{};
+/// Removes the window's menu bar (LHWin.cpp).
+inline constexpr bw::CdeclFunction<0x00746ea0, void()> RemoveWindowMenu{};
+/// LHLogR.dll: when set, failed assertions are logged instead of shown in a dialog.
+BW_IMPORTED_DATA(std::int32_t, LHAssertIgnoreAllAsserts, 0x007eb32c);
 /// SELFMOD (0x00ee0285): patches the software rasteriser's four instructions that address the back buffer.
 inline constexpr bw::CdeclFunction<0x00ee0285, void(void*)> SetRasteriserTarget{};
 
@@ -77,6 +81,75 @@ std::vector<DisplayMode> RankFallbackModes(std::span<const DisplayMode> availabl
         return a.Area() > b.Area();
     });
     return ranked;
+}
+
+RECT FitFrame(DisplayMode frame, DisplayMode client, bool keepAspectRatio) noexcept
+{
+    if (!keepAspectRatio || frame.width <= 0 || frame.height <= 0) {
+        return {0, 0, client.width, client.height};
+    }
+    // Width-limited when client.width / client.height <= frame.width / frame.height.
+    std::int64_t width = client.width;
+    std::int64_t height = client.height;
+    if (std::int64_t{client.width} * frame.height <= std::int64_t{client.height} * frame.width) {
+        height = std::int64_t{client.width} * frame.height / frame.width;
+    }
+    else {
+        width = std::int64_t{client.height} * frame.width / frame.height;
+    }
+    const auto left = static_cast<LONG>((client.width - width) / 2);
+    const auto top = static_cast<LONG>((client.height - height) / 2);
+    return {left, top, left + static_cast<LONG>(width), top + static_cast<LONG>(height)};
+}
+
+POINT MapToFrame(POINT client, const RECT& frameRect, DisplayMode frame) noexcept
+{
+    const std::int64_t width = frameRect.right - frameRect.left;
+    const std::int64_t height = frameRect.bottom - frameRect.top;
+    if (width <= 0 || height <= 0 || frame.width <= 0 || frame.height <= 0) {
+        return {0, 0};
+    }
+    const std::int64_t x = std::clamp<std::int64_t>(client.x - frameRect.left, 0, width - 1) * frame.width / width;
+    const std::int64_t y = std::clamp<std::int64_t>(client.y - frameRect.top, 0, height - 1) * frame.height / height;
+    return {static_cast<LONG>(x), static_cast<LONG>(y)};
+}
+
+POINT MapFromFrame(POINT framePoint, const RECT& frameRect, DisplayMode frame) noexcept
+{
+    if (frame.width <= 0 || frame.height <= 0) {
+        return {frameRect.left, frameRect.top};
+    }
+    // The centre of the frame pixel, so that MapToFrame(MapFromFrame(p)) == p.
+    const std::int64_t width = frameRect.right - frameRect.left;
+    const std::int64_t height = frameRect.bottom - frameRect.top;
+    const std::int64_t x = (2 * std::int64_t{framePoint.x} + 1) * width / (2 * std::int64_t{frame.width});
+    const std::int64_t y = (2 * std::int64_t{framePoint.y} + 1) * height / (2 * std::int64_t{frame.height});
+    return {frameRect.left + static_cast<LONG>(x), frameRect.top + static_cast<LONG>(y)};
+}
+
+bool LHScreen::Scaled() const noexcept
+{
+    return m_windowed != 0 && bw::GetConfig().windowMode != bw::WindowMode::FullScreen;
+}
+
+RECT LHScreen::FrameRect() const noexcept
+{
+    const RECT unscaled{0, 0, m_width, m_height};
+    RECT client{};
+    if (!Scaled() || !GetClientRect(m_window, &client) || client.right <= 0 || client.bottom <= 0) {
+        return unscaled;
+    }
+    return FitFrame(Size(), {client.right, client.bottom}, bw::GetConfig().keepAspectRatio);
+}
+
+POINT LHScreen::ClientToFrame(POINT client) const noexcept
+{
+    return Scaled() ? MapToFrame(client, FrameRect(), Size()) : client;
+}
+
+POINT LHScreen::FrameToClient(POINT framePoint) const noexcept
+{
+    return Scaled() ? MapFromFrame(framePoint, FrameRect(), Size()) : framePoint;
 }
 
 std::int32_t LHScreen::SetMode(std::int32_t width, std::int32_t height, std::int32_t bitsPerPixel) noexcept
@@ -162,13 +235,35 @@ std::int32_t LHScreen::GetAvailableVideoMemory() noexcept
     return ClampVideoMemory(free, bw::GetConfig().maxReportedVideoMemoryMiB);
 }
 
+void LHScreen::SetFullScreen(std::int32_t fullScreen) noexcept
+{
+    if (bw::GetConfig().windowMode != bw::WindowMode::FullScreen) {
+        // The original only set m_windowed; dialogs then stayed enabled, which a retail build never expected.
+        LHAssertIgnoreAllAsserts() = 1;
+        m_windowed = 1;
+        return;
+    }
+    if (fullScreen == 0) {
+        m_windowed = 1;
+        return;
+    }
+    LHAssertIgnoreAllAsserts() = 1;
+    m_windowed = 0;
+    SetWindowLongA(m_window, GWL_STYLE, static_cast<LONG>(WS_POPUP));
+    SetWindowLongA(m_window, GWL_EXSTYLE, WS_EX_TOPMOST);
+    RemoveWindowMenu();
+}
+
 std::int32_t LHScreen::Flip(std::int32_t swapBuffers) noexcept
 {
     if (m_locked == 0 && bw::diagnostics::ScreenshotRequested()) {
         bw::diagnostics::SaveScreenshot(m_backSurface);
     }
 
-    if (m_windowed != 0) {
+    if (m_windowed != 0 && Scaled()) {
+        PresentScaled();
+    }
+    else if (m_windowed != 0) {
         RECT target{m_windowX, m_windowY, m_windowX + m_width, m_windowY + m_height};
         m_primarySurface->Blt(&target, m_backSurface, nullptr, DDBLT_WAIT, nullptr);
     }
@@ -191,6 +286,40 @@ std::int32_t LHScreen::Flip(std::int32_t swapBuffers) noexcept
     return 0;
 }
 
+void LHScreen::PresentScaled() noexcept
+{
+    RECT client{};
+    if (!GetClientRect(m_window, &client) || client.right <= 0 || client.bottom <= 0) {
+        return;  // minimised
+    }
+    POINT origin{0, 0};
+    ClientToScreen(m_window, &origin);
+    auto toScreen = [&](RECT rect) {
+        OffsetRect(&rect, origin.x, origin.y);
+        return rect;
+    };
+
+    const RECT frame = FrameRect();
+    // Clear the bars around a letterboxed picture; the primary surface's clipper keeps this inside the window.
+    const RECT bars[] = {
+        {0, 0, client.right, frame.top},
+        {0, frame.bottom, client.right, client.bottom},
+        {0, frame.top, frame.left, frame.bottom},
+        {frame.right, frame.top, client.right, frame.bottom},
+    };
+    DDBLTFX fill{};
+    fill.dwSize = sizeof fill;
+    fill.dwFillColor = 0;
+    for (const RECT& bar : bars) {
+        if (bar.right > bar.left && bar.bottom > bar.top) {
+            RECT target = toScreen(bar);
+            m_primarySurface->Blt(&target, nullptr, nullptr, DDBLT_COLORFILL | DDBLT_WAIT, &fill);
+        }
+    }
+    RECT target = toScreen(frame);
+    m_primarySurface->Blt(&target, m_backSurface, nullptr, DDBLT_WAIT, nullptr);
+}
+
 std::int32_t LHScreen::Lock(std::int32_t unknown) noexcept
 {
     return LockOriginal(this, unknown);
@@ -208,6 +337,7 @@ void LHScreen::RestoreSurfaces() noexcept
 
 BW_HOOK_METHOD(0x00748d70, LHScreen, SetMode);
 BW_HOOK_METHOD(0x007496c0, LHScreen, Flip);
+BW_HOOK_METHOD(0x007484a0, LHScreen, SetFullScreen);
 BW_HOOK_METHOD(0x00749a70, LHScreen, GetAvailableVideoMemory);
 
 }  // namespace lhlib

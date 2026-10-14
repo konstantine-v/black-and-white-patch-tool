@@ -9,6 +9,13 @@
 
 namespace bw {
 
+/// [Display] WindowMode.
+enum class WindowMode : std::uint8_t {
+    FullScreen = 0,  ///< Exclusive full screen, as the original.
+    Window = 1,      ///< A resizable window; the picture is scaled to it.
+    Borderless = 2,  ///< A borderless window covering the monitor; the picture is scaled to it.
+};
+
 /// User settings from BWDecomp.ini (next to BWDecomp.dll). Every fix can be switched off so that original behaviour
 /// stays reproducible; see docs/FIXES.md for what each one changes.
 struct Config {
@@ -24,6 +31,10 @@ struct Config {
     std::uint32_t shutdownTimeoutSeconds = 60;   ///< ShutdownTimeoutSeconds: end a stalled quit; 0 = never.
     std::uint32_t maxReportedPhysicalMemoryMiB = 512;  ///< MaxReportedPhysicalMemoryMB: 0 = unlimited.
     std::uint32_t maxReportedVideoMemoryMiB = 1024;    ///< MaxReportedVideoMemoryMB: 0 = only clamp to INT32_MAX.
+
+    // [Display]
+    WindowMode windowMode = WindowMode::FullScreen;  ///< WindowMode: 0 full screen, 1 window, 2 borderless.
+    bool keepAspectRatio = true;                 ///< KeepAspectRatio: black bars instead of stretching.
 
     // [Hooks]
     std::vector<Address> disabledHooks;          ///< Disabled: original addresses that keep running original code.

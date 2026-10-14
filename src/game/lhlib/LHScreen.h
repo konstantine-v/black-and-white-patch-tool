@@ -25,6 +25,14 @@ struct DisplayMode {
     friend constexpr bool operator==(const DisplayMode&, const DisplayMode&) = default;
 };
 
+/// Where a `frame`-sized picture is shown in a `client`-sized window area: all of it, or with `keepAspectRatio` the
+/// largest centred rectangle of the frame's shape.
+[[nodiscard]] RECT FitFrame(DisplayMode frame, DisplayMode client, bool keepAspectRatio) noexcept;
+/// A point of the window area to the frame pixel shown there, clamped to the frame.
+[[nodiscard]] POINT MapToFrame(POINT client, const RECT& frameRect, DisplayMode frame) noexcept;
+/// A frame pixel to the window-area point where it is shown.
+[[nodiscard]] POINT MapFromFrame(POINT framePoint, const RECT& frameRect, DisplayMode frame) noexcept;
+
 /// Modes to try when Direct3D refuses `requested`: smaller in both dimensions, same aspect ratio first, then by
 /// decreasing area.
 [[nodiscard]] std::vector<DisplayMode> RankFallbackModes(std::span<const DisplayMode> available, DisplayMode requested);
@@ -43,9 +51,15 @@ public:
     /// texture path when this is below 13,000,000 and LH3DRender logs it.
     [[nodiscard]] std::int32_t GetAvailableVideoMemory() noexcept;  // 0x00749a70
 
+    /// Chooses exclusive full-screen (popup, topmost, no menu) or windowed presentation for the next ApplyMode. The
+    /// game asks for full screen at start-up whatever its FullScreen setting says. Fix (Windowed): requests become
+    /// windowed when BWDecomp.ini asks for it; assertion dialogs stay suppressed as in full screen.
+    void SetFullScreen(std::int32_t fullScreen) noexcept;  // 0x007484a0
+
     /// Shows the back buffer: Flip in full-screen mode, Blt into the window's client area in windowed mode. With
     /// `swapBuffers`, the software rasteriser is pointed at the new back buffer. Always returns 0. Diagnostics:
-    /// saves a screenshot of the frame when one was requested (diagnostics/Screenshot.h).
+    /// saves a screenshot of the frame when one was requested (diagnostics/Screenshot.h). Fix (WindowMode 1/2): the
+    /// picture is scaled to the client area (FrameRect) and the rest of it is cleared.
     std::int32_t Flip(std::int32_t swapBuffers) noexcept;  // 0x007496c0
 
     /// Locks the back surface for the software rasteriser and records its address and pitch. Returns 0 on success,
@@ -62,9 +76,20 @@ public:
     [[nodiscard]] HWND Window() const noexcept { return m_window; }
     [[nodiscard]] IDirectDrawSurface* BackSurface() const noexcept { return m_backSurface; }
     [[nodiscard]] bool Windowed() const noexcept { return m_windowed != 0; }
+    [[nodiscard]] DisplayMode Size() const noexcept { return {m_width, m_height}; }
+
+    /// True when the picture is scaled to the window (windowed, with WindowMode 1 or 2).
+    [[nodiscard]] bool Scaled() const noexcept;
+    /// Where the picture is shown in the window's client area: {0, 0, width, height} unless Scaled().
+    [[nodiscard]] RECT FrameRect() const noexcept;
+    /// Client-area point to game coordinates and back; identity unless Scaled().
+    [[nodiscard]] POINT ClientToFrame(POINT client) const noexcept;
+    [[nodiscard]] POINT FrameToClient(POINT framePoint) const noexcept;
 
 private:
     friend struct LHScreenLayout;
+
+    void PresentScaled() noexcept;
 
     std::byte m_unknown00[4];                  // 0x00
     std::int32_t m_modeSet;                    // 0x04  set to 1 by SetMode (0x00748d70)
@@ -120,6 +145,9 @@ BW_GLOBAL(std::int32_t, g_screenNeedsInitialise, 0x00b53800);
 BW_GLOBAL(HWND, g_mainWindow, 0x00d62f24);
 /// 1 while the surfaces are suspended: set when the window is deactivated (0x00749780), cleared by RestoreSurfaces.
 BW_GLOBAL(std::int32_t, g_screenSuspended, 0x00d63410);
+
+/// The window's debug menu ("AppMenu"), shown in windowed mode.
+BW_GLOBAL(HMENU, g_windowMenu, 0x00d62f20);
 
 /// The colour depth SetMode actually uses: 16-bit requests become 32-bit when `promote16To32` is set, because
 /// current drivers no longer create a hardware Direct3D 7 device on a 16-bit display mode.

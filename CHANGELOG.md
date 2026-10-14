@@ -4,6 +4,18 @@ Versions follow [semantic versioning](https://semver.org/) while the decompilati
 increases with each wave of decompiled code or fixes, the patch version for corrections. The version is set in
 `CMakeLists.txt` and tagged in git as `vX.Y.Z`.
 
+## 0.5.0
+
+Windowed and borderless play, scaled to any window size.
+
+- `[Display] WindowMode`: 0 = exclusive full screen (original), 1 = resizable window, 2 = borderless window covering
+  the monitor; `KeepAspectRatio` letterboxes instead of stretching. A 2560×1440 screen is filled from a 1920×1080
+  render without a display-mode change.
+- Decompiled `LHScreen::SetFullScreen`, `ResizeWindowToMode`, `ShowWindowMenu`, the mouse thread's cursor read and
+  `LHMouse::SetPosition` (`LHMouse.cpp`); 24 functions in total. Mouse input is mapped through the scaling.
+- The debug menu bar of the original windowed mode is hidden; assertion dialogs stay suppressed as in full screen.
+- `BW_IMPORTED_DATA` for variables other DLLs export to the game.
+
 ## 0.4.0
 
 Quitting always works.

@@ -31,3 +31,9 @@ template <typename T>
 ///     BW_IMPORT(DirectDrawEnumerateA, s_DirectDrawEnumerateA, 0x007eb02c);
 #define BW_IMPORT(function, name, slotAddress) \
     inline decltype(&::function)& name = ::bw::GlobalRef<decltype(&::function)>(slotAddress)
+
+/// Declares `name()` as an accessor for a variable another DLL exports to the game (the IAT slot holds its address).
+/// A function rather than a reference: the slot is only filled once the loader has resolved the game's imports.
+///     BW_IMPORTED_DATA(std::int32_t, LHAssertIgnoreAllAsserts, 0x007eb32c);
+#define BW_IMPORTED_DATA(Type, name, slotAddress) \
+    [[nodiscard]] inline Type& name() noexcept { return *::bw::GlobalRef<Type*>(slotAddress); }

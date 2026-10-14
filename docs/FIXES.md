@@ -47,6 +47,22 @@ and returns 0. `LHScreen::SetMode` then tries the display's smaller modes, same 
 (`DisplayModeFallback`), so 2560×1440 runs at 1920×1080 instead of crashing. Rendering above 2048 pixels needs a
 renderer that does not go through Direct3D 7; that is planned with the decompilation of LH3D.
 
+### No windowed mode; resolutions above 2048 pixels
+
+**Symptom:** the game always takes over the screen in exclusive full screen; on displays wider than 2048 pixels it
+cannot use the native resolution (see above) and the monitor switches to a smaller mode.
+**Cause:** `LHScreen` has a complete windowed path (Lionhead's development mode): `ApplyMode` (`0x00748de0`) keeps the
+desktop mode, creates an off-screen 3D back buffer and a clipper, and `Flip` blits the frame into the window. But
+`PCMain` calls `LHScreen::SetFullScreen(1)` (`0x007484a0`) unconditionally at start-up (`0x005f291b`), whatever the
+`FullScreen` setting says, so the windowed path is never used. It also blits 1:1, with a debug menu bar.
+**Fix:** `WindowMode` in `[Display]`: 1 = a resizable window, 2 = a borderless window covering the monitor.
+`SetFullScreen` is decompiled and keeps the windowed path; `LHScreen::Flip` scales the frame to the window (keeping the
+aspect ratio, `KeepAspectRatio`) and clears the bars; `ResizeWindowToMode` (`0x00747ee0`) sizes the window or makes it
+cover the monitor; `ShowWindowMenu` (`0x00746eb0`) leaves the debug menu hidden. Mouse positions are mapped back to
+game coordinates in the window procedure, the mouse thread (`0x00747470`) and when the game moves the cursor
+(`LHMouse::SetPosition`, `0x0074c0f0`). In mode 2 a 2560×1440 screen shows the game rendered at 1920×1080 (the largest
+16:9 mode Direct3D 7 accepts), scaled to fill it, without changing the display mode.
+
 ### Hang when closing a minimised game
 
 **Symptom:** after Alt+Tab (or minimising), closing the game from the taskbar does nothing; the process keeps one CPU
@@ -145,8 +161,8 @@ only ever selects that root, so settings (`Software\Lionhead Studios Ltd\Black &
 
 | Problem | What is known | Next step |
 |---|---|---|
-| Native resolutions wider than 2048 | Direct3D 7 refuses such render targets (see above); the game falls back to a smaller mode. | Decompile LH3D's device layer and render through Direct3D 9/11, or render at ≤ 2048 and scale. |
-| Windowed mode | `0x00747050` creates an 800×600 `WS_OVERLAPPEDWINDOW`; `SetMode` switches styles; `LHScreen::Flip` (decompiled) already presents into the client area when `0x64` is set. | Decompile `LHWin.cpp`/`LHScreen.cpp` window handling. |
+| Rendering wider than 2048 pixels | Direct3D 7 refuses such render targets (see above), also in windowed mode; `WindowMode=2` scales a ≤ 2048 render to the screen instead. | Decompile LH3D's device layer and render through Direct3D 9/11. |
+| Videos in window modes | Bink videos draw straight into the primary surface at the window's position (`LHScreen` `+0x20`, `0x007498d0`), unscaled. | Decompile the video playback path. |
 
 ## Official patches
 

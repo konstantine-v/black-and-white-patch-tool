@@ -49,10 +49,32 @@ BW_GLOBAL(std::uint8_t, g_restoreRequested, 0x00d62f2b);
 /// gets WindowProcedure, which forwards to `procedure`.
 [[nodiscard]] std::int32_t RegisterWindowClass(HINSTANCE instance, WNDPROC procedure) noexcept;  // 0x00746fc0
 
+/// True for the mouse messages whose lParam holds client coordinates.
+[[nodiscard]] constexpr bool IsClientMouseMessage(UINT message) noexcept
+{
+    return message >= WM_MOUSEFIRST && message <= WM_MOUSELAST && message != WM_MOUSEWHEEL &&
+           message != WM_MOUSEHWHEEL;
+}
+
 /// The game window's procedure when CloseRequestsQuit is on: WM_CLOSE asks the game to quit, like Alt+F4, and
 /// everything else goes to the original procedure (0x007474e0). Originally WM_CLOSE (sent by taskkill and other
-/// tools) reached DefWindowProc, which destroyed the window while the game kept running without one.
+/// tools) reached DefWindowProc, which destroyed the window while the game kept running without one. When the
+/// picture is scaled, mouse messages are given game coordinates.
 LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+
+/// Sizes the game window for windowed mode: client area of the display mode's size (or of the current client size
+/// where `width`/`height` are non-zero and not larger than the mode). Returns 0, or 2 when the window cannot be
+/// moved. Does nothing in full screen. Fix (WindowMode): no menu bar is accounted for, and WindowMode 2 makes the
+/// window a borderless popup covering its monitor.
+std::int32_t ResizeWindowToMode(std::uint16_t width, std::uint16_t height) noexcept;  // 0x00747ee0
+
+/// Gives the window its debug menu bar ("AppMenu") in windowed mode. Fix (WindowMode): the bar stays hidden; the
+/// accelerators work without it.
+void ShowWindowMenu() noexcept;  // 0x00746eb0
+
+/// The cursor position in game coordinates for the mouse thread in windowed mode (GetCursorPos, ScreenToClient).
+/// Fix (WindowMode): mapped through the window's scaling. The original ignored `window` and used the main window.
+void GetCursorFramePosition(HWND window, POINT* position) noexcept;  // 0x00747470
 
 /// Dispatches the game window's pending messages and, while the screen is suspended (window minimised or
 /// deactivated), keeps doing so until it is restored. Called by the frame flip whenever messages are waiting.
