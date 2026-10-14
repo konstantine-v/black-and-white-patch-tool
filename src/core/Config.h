@@ -41,9 +41,11 @@ struct Config {
     // [Display]
     WindowMode windowMode = WindowMode::FullScreen;  ///< WindowMode: 0 full screen, 1 window, 2 borderless.
     bool keepAspectRatio = true;                 ///< KeepAspectRatio: black bars instead of stretching.
-    Renderer renderer = Renderer::Direct3D7;     ///< Renderer: 0 Direct3D 7 (original), 1 Direct3D 9.
+    Renderer renderer = Renderer::Direct3D9;     ///< Renderer: 0 Direct3D 7 (original), 1 Direct3D 9.
     bool vsync = true;                           ///< VSync: Direct3D 9 renderer waits for the display refresh.
     std::uint32_t anisotropy = 0;                ///< Anisotropy: Direct3D 9 renderer's anisotropic filtering, 0 = off.
+    std::uint32_t antiAliasing = 0;              ///< AntiAliasing: Direct3D 9 renderer's samples per pixel, 0 = off.
+    bool fullPrecisionTextures = true;           ///< FullPrecisionTextures: decoded DXT textures keep their colours.
 
     // [Hooks]
     std::vector<Address> disabledHooks;          ///< Disabled: original addresses that keep running original code.

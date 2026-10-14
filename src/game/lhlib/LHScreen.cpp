@@ -267,10 +267,11 @@ std::int32_t LHScreen::Flip(std::int32_t swapBuffers) noexcept
             bw::log::Debug("LHScreen: {:.1f} frames per second", frames * 1000.0 / static_cast<double>(elapsed));
             if (bw::render::Active()) {
                 const auto statistics = bw::render::gpu::TakeStatistics();
-                bw::log::Debug("  per frame: {:.0f} draws, {:.2f} texture uploads, {:.2f} depth reads, {:.2f} frame "
-                               "reads, {:.2f} frame writes",
+                bw::log::Debug("  per frame: {:.0f} draws, {:.2f} texture uploads, {:.2f} depth reads, {:.2f} depth "
+                               "probes, {:.2f} resolves, {:.2f} frame reads, {:.2f} frame writes",
                                statistics.draws / double(frames), statistics.textureUploads / double(frames),
-                               statistics.depthReads / double(frames), statistics.targetReads / double(frames),
+                               statistics.depthReads / double(frames), statistics.depthProbes / double(frames),
+                               statistics.resolves / double(frames), statistics.targetReads / double(frames),
                                statistics.targetWrites / double(frames));
             }
             frames = 0;

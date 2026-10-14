@@ -447,7 +447,8 @@ HRESULT Surface::Lock(LPRECT rect, LPDDSURFACEDESC2 desc, DWORD flags, HANDLE /*
             m_depthView = std::make_unique<DepthView>();
         }
         m_pitch = AlignedPitch(m_format, Width());
-        std::uint8_t* view = m_depthView->Begin(*m_depth, m_format, Width(), Height(), m_pitch);
+        std::uint8_t* view =
+            m_depth->Readable() ? m_depthView->Begin(*m_depth, m_format, Width(), Height(), m_pitch) : nullptr;
         if (view == nullptr) {
             static bool logged = false;
             LogOnce(logged, "the depth buffer cannot be read by the CPU");
@@ -620,6 +621,28 @@ HRESULT Surface::CopyFrom(Surface& source, const RECT& sourceRect, const RECT& d
     }
 
     // CPU destination (texture or system memory).
+    std::vector<std::uint32_t> decoded;
+    const HRESULT result = CopyPixels(source, sourceRect, destination, sourceKey, decoded);
+    // A whole texture level copied without scaling keeps the precision its 16-bit format loses: the decoded pixels of
+    // a compressed source, or the full-precision pixels of a texture source.
+    const RECT sourceBounds = source.Bounds();
+    const RECT bounds = Bounds();
+    const bool wholeLevel = !sourceKey && EqualRect(&sourceRect, &sourceBounds) && EqualRect(&destination, &bounds);
+    if (SUCCEEDED(result) && wholeLevel && m_role == SurfaceRole::Texture && GpuTexture() != nullptr) {
+        if (!decoded.empty()) {
+            (void)GpuTexture()->SetFullPrecision(m_level, decoded.data(),
+                                                 static_cast<std::int32_t>(source.Width() * sizeof(std::uint32_t)));
+        }
+        else if (source.m_role == SurfaceRole::Texture && source.GpuTexture() != nullptr) {
+            source.GpuTexture()->CopyFullPrecision(source.m_level, *GpuTexture(), m_level);
+        }
+    }
+    return result;
+}
+
+HRESULT Surface::CopyPixels(Surface& source, const RECT& sourceRect, const RECT& destination, bool sourceKey,
+                            std::vector<std::uint32_t>& decoded) noexcept
+{
     CpuLock from(source, true);
     CpuLock to(*this, false);
     if (!from || !to) {
@@ -646,7 +669,6 @@ HRESULT Surface::CopyFrom(Surface& source, const RECT& sourceRect, const RECT& d
         return DDERR_UNSUPPORTED;
     }
     // Block-compressed sources are decoded first (DirectDraw decompressed DXT surfaces in blits the same way).
-    std::vector<std::uint32_t> decoded;
     if (IsBlockCompressed(source.m_format)) {
         try {
             decoded.resize(std::size_t(sourceWidth) * sourceHeight);

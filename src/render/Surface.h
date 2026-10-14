@@ -205,6 +205,9 @@ private:
     bool ReadPixels(CpuView& view) noexcept;
     HRESULT Fill(const RECT& rect, DWORD color) noexcept;
     HRESULT CopyFrom(Surface& source, const RECT& sourceRect, const RECT& destination, bool sourceKey) noexcept;
+    /// CopyFrom into CPU storage (texture or system memory); `decoded` receives a compressed source's pixels.
+    HRESULT CopyPixels(Surface& source, const RECT& sourceRect, const RECT& destination, bool sourceKey,
+                       std::vector<std::uint32_t>& decoded) noexcept;
     HRESULT Present(Surface& frame, const RECT& source, const RECT& destination) noexcept;
     [[nodiscard]] HWND PresentationWindow() const noexcept;
 

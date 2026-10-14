@@ -11845,7 +11845,7 @@ address,end,name,class,tu,status,notes
 0x007be860,0x007bea10,FUN_007be860,,,original,
 0x007bea10,0x007bebd0,FUN_007bea10,,,original,
 0x007bebd0,0x007bed70,FUN_007bebd0,,,original,
-0x007bed70,0x007bf090,FUN_007bed70,,,original,
+0x007bed70,0x007bf090,LH3DSky::SunVisibility,,,decompiled,
 0x007bf090,0x007bf1b0,FUN_007bf090,,,original,
 0x007bf1b0,0x007bf290,FUN_007bf1b0,,,original,
 0x007bf290,0x007bf340,FUN_007bf290,,,original,

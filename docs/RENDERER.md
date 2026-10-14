@@ -101,9 +101,9 @@ Things Direct3D 9 does not have, handled in the replacement:
 - CPU access to the render target: the back buffer is read back only when the game locks it after GPU drawing, and
   uploaded before the next GPU draw after a CPU write.
 
-## Implementation (0.7.0)
+## Implementation (0.7.0, default since 0.8.0)
 
-`[Display] Renderer=1` selects it. Code in `src/render`:
+`[Display] Renderer=1` (the default) selects it; without Direct3D 9Ex the original renderer runs. Code in `src/render`:
 
 | File | Role |
 |---|---|
@@ -111,7 +111,7 @@ Things Direct3D 9 does not have, handled in the replacement:
 | `DirectDraw.cpp` | `IDirectDraw7` + `IDirect3D7` (+ `IDirectDraw`/`2`/`4` views), `IDirectDrawClipper`; a real DirectDraw object answers caps, device identifier and display-mode queries |
 | `Surface.cpp` | `IDirectDrawSurface7` (+ versions 1-4, `IDirect3DTexture2`): roles primary, render target, depth, texture, system memory; locks, blits with format conversion, DXT decoding and encoding |
 | `Device.cpp` | `IDirect3DDevice7`: caches every Direct3D 7 state (the game reads many back), translates changes, records state blocks as Direct3D 7 calls |
-| `Gpu.cpp` | The only file that includes `d3d9.h`: device, textures (system-memory copy uploaded before drawing; 9Ex has no managed pool), render targets, depth buffers, draws, presentation through a separate swap chain sized to the window (resizing never resets the device) |
+| `Gpu.cpp` | The only file that includes `d3d9.h`: device, textures (system-memory copy uploaded before drawing; 9Ex has no managed pool), render targets (multisampled with a single-sampled copy), depth buffers, depth probes (occlusion queries), draws, presentation through a separate swap chain sized to the window (resizing never resets the device) |
 | `Translate.cpp`, `Pixels.cpp`, `Format.cpp` | Pure translation: states, transforms, vertex formats, pixel formats (unit-tested) |
 | `DepthView.cpp` | Lazy CPU view of the depth buffer (below) |
 
@@ -123,26 +123,40 @@ What it took beyond a one-to-one translation:
   9 drivers reject that, and the game then chose its multipass blending, which draws objects black.
 - **DXT through blits.** The game decompresses DXT textures by blitting them into 16-bit textures and compresses others
   by blitting into DXT1; DirectDraw did both, so the replacement decodes and encodes on the CPU.
-- **The depth buffer is read every frame** (`0x007c37a0`, the sun-visibility test), whole, read-only. The depth buffer
-  is 32-bit float and lockable; the lock returns a view whose pages are inaccessible until touched, and an exception
-  handler fills only the touched pages from the GPU. A full read-back cost 40 % of the frame rate at 2560x1440; the
-  menu touches no page at all.
+- **The sun test reads depth every frame.** `LH3DSky::SunVisibility` (`0x007bed70`, decompiled in 0.8.0) locks the
+  whole z-buffer to read five values: whether the points around the sun are behind something. Any read waits for the
+  GPU to finish the frame. With this renderer each point is an occlusion query instead (a one-pixel point at the
+  sky's depth that passes the depth test where something nearer was drawn), answered a frame or two later without
+  waiting; the game smooths the result over frames anyway. A depth lock still works otherwise: the depth buffer is
+  32-bit float and lockable, and the lock returns a view whose pages are filled from the GPU only when touched
+  (`DepthView.cpp`; not with multisampling, whose depth cannot be locked).
 - **No back-buffer lock per frame.** `LHScreen::Flip` locked the back buffer every frame to refresh the software
   rasteriser's pointer; the rasteriser (`SELFMOD`) is dead code in this build, so the Direct3D 9 renderer skips it.
 - **No display-mode changes.** "Full screen" is a borderless window; the game's resolution is the render target's,
   scaled to the window when they differ.
 
-Measured on an RTX 3080 Ti, front end: original renderer 142 fps at 1920x1080 (windowed, compositor-limited);
-Direct3D 9 143 fps at 2560x1440 with VSync off.
+Quality options (0.8.0):
 
-Debugging aids ([Log] Debug=1): surface kinds and blit paths, per-frame statistics (draws, texture uploads, depth and
-frame read-backs) with the frame rate, and with `BW_DUMP_TEXTURES=1` in the environment the first 60 textures bound as
+- **Anti-aliasing** (`AntiAliasing=4`, samples per pixel): the game draws into a multisampled render target. CPU
+  access, copies and presentation use a single-sampled copy resolved from it when it is newer; pixels the CPU or a
+  blit put into that copy are drawn back into the multisampled target before the next draw. Depth buffers are
+  multisampled to match.
+- **Full-precision textures** (`FullPrecisionTextures=1`): the game unpacks DXT textures by blitting them into
+  16-bit textures, mostly A4R4G4B4 (4 bits per colour channel, visible banding). The decoded pixels are kept: such a
+  texture's GPU copy becomes A8R8G8B8 with the decoded colours, until the game writes the level itself. Copies of a
+  whole level (blits, `Load`) pass them on. The game's own art is 16-bit (`.555`, `.raw`) or DXT, so widening other
+  textures would add nothing; the render target is 32-bit already (`ColorDepth32`).
+
+Measured on an RTX 3080 Ti, front end: original renderer 142 fps at 1920x1080 (windowed, compositor-limited);
+Direct3D 9 143 fps at 2560x1440 with VSync off, also with 4x anti-aliasing, in the front end and a skirmish game.
+
+Debugging aids ([Log] Debug=1): surface kinds and blit paths, per-frame statistics (draws, texture uploads, depth
+read-backs and probes, resolves, frame read-backs) with the frame rate, and with `BW_DUMP_TEXTURES=1` in the environment the first 60 textures bound as
 PNG files in `Screenshots\`.
 
 ## Steps
 
 1. Inventory (this document, `TraceDirectX`). Done in 0.6.0.
-2. DirectDraw and Direct3D 7 on Direct3D 9Ex: front end, videos, game, native resolutions above 2048. Done in 0.7.0
-   (experimental, off by default).
-3. Next: quality options (32-bit textures where the game would pick 16-bit, multisampling), sun visibility through an
-   occlusion query instead of depth reads, and making the Direct3D 9 renderer the default.
+2. DirectDraw and Direct3D 7 on Direct3D 9Ex: front end, videos, game, native resolutions above 2048. Done in 0.7.0.
+3. Anti-aliasing, full-precision textures, the sun test through occlusion queries, Direct3D 9 as the default. Done in
+   0.8.0.

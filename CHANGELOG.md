@@ -4,6 +4,21 @@ Versions follow [semantic versioning](https://semver.org/) while the decompilati
 increases with each wave of decompiled code or fixes, the patch version for corrections. The version is set in
 `CMakeLists.txt` and tagged in git as `vX.Y.Z`.
 
+## 0.8.0
+
+The Direct3D 9 renderer becomes the default, with anti-aliasing and better textures.
+
+- `[Display] Renderer` defaults to 1 (Direct3D 9); without Direct3D 9Ex the original renderer runs. `Renderer=0`
+  restores it.
+- `AntiAliasing` (e.g. 4): multisampled rendering, resolved for presentation, screenshots and CPU access.
+- `FullPrecisionTextures=1`: DXT textures the game unpacks into 16-bit textures keep their decoded colours (A8R8G8B8
+  on the GPU) instead of 4 bits per channel.
+- `LH3DSky::SunVisibility` (`0x007bed70`) decompiled: the sun glare's visibility test. With the Direct3D 9 renderer it
+  uses occlusion queries instead of locking the z-buffer every frame, so it never waits for the GPU.
+- Duplicate `BeginScene`/`EndScene` calls of the game are dropped instead of failing in Direct3D 9.
+- Tested at 2560x1440 with 4x anti-aliasing: front end and a skirmish game at 143 fps (display refresh), sun probes
+  answered every frame.
+
 ## 0.7.0
 
 A Direct3D 9 renderer: the game at native resolutions above 2048 pixels.

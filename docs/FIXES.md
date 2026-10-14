@@ -63,6 +63,16 @@ game coordinates in the window procedure, the mouse thread (`0x00747470`) and wh
 (`LHMouse::SetPosition`, `0x0074c0f0`). In mode 2 a 2560×1440 screen shows the game rendered at 1920×1080 (the largest
 16:9 mode Direct3D 7 accepts), scaled to fill it, without changing the display mode.
 
+### DirectDraw and Direct3D 7 on current Windows
+
+**Symptom:** at most 2048 pixels wide, no anti-aliasing, banding in textures, a GPU stall every frame.
+**Cause:** Direct3D 7 refuses wider render targets; the game unpacks DXT textures into 4-bit-per-channel textures; the
+sun glare's visibility test (`LH3DSky::SunVisibility`, `0x007bed70`) locks the z-buffer every frame, which waits for
+the GPU to finish the frame.
+**Fix:** the Direct3D 9 renderer ([RENDERER.md](RENDERER.md)), the default since 0.8.0 (`Renderer=0` for the
+original): any resolution, `AntiAliasing`, `FullPrecisionTextures`, and the sun test through occlusion queries
+(`SunVisibility` is decompiled; with the original renderer it still locks the z-buffer, as the original did).
+
 ### Hang when closing a minimised game
 
 **Symptom:** after Alt+Tab (or minimising), closing the game from the taskbar does nothing; the process keeps one CPU
@@ -161,7 +171,7 @@ only ever selects that root, so settings (`Software\Lionhead Studios Ltd\Black &
 
 | Problem | What is known | Next step |
 |---|---|---|
-| Rendering wider than 2048 pixels with the original renderer | Direct3D 7 refuses such render targets (see above), also in windowed mode. The Direct3D 9 renderer (`Renderer=1`, [RENDERER.md](RENDERER.md)) renders at any resolution. | Make the Direct3D 9 renderer the default once it has been played more. |
+| Rendering wider than 2048 pixels with the original renderer (`Renderer=0`) | Direct3D 7 refuses such render targets (see above), also in windowed mode. The Direct3D 9 renderer ([RENDERER.md](RENDERER.md)), the default since 0.8.0, renders at any resolution. | — |
 | Videos in window modes | Bink videos draw straight into the primary surface at the window's position (`LHScreen` `+0x20`, `0x007498d0`), unscaled. | Decompile the video playback path. |
 
 ## Official patches

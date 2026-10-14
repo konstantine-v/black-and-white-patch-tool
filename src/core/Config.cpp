@@ -81,9 +81,15 @@ Config Config::Load(const std::filesystem::path& iniFile)
                             ? static_cast<WindowMode>(windowMode)
                             : WindowMode::FullScreen;
     config.keepAspectRatio = ReadBool(iniFile, L"Display", L"KeepAspectRatio", config.keepAspectRatio);
-    config.renderer = ReadUnsigned(iniFile, L"Display", L"Renderer", 0) == 1 ? Renderer::Direct3D9 : Renderer::Direct3D7;
+    config.renderer = ReadUnsigned(iniFile, L"Display", L"Renderer", static_cast<std::uint32_t>(config.renderer)) == 0
+                          ? Renderer::Direct3D7
+                          : Renderer::Direct3D9;
     config.vsync = ReadBool(iniFile, L"Display", L"VSync", config.vsync);
     config.anisotropy = std::min<std::uint32_t>(ReadUnsigned(iniFile, L"Display", L"Anisotropy", config.anisotropy), 16);
+    config.antiAliasing =
+        std::min<std::uint32_t>(ReadUnsigned(iniFile, L"Display", L"AntiAliasing", config.antiAliasing), 16);
+    config.fullPrecisionTextures =
+        ReadBool(iniFile, L"Display", L"FullPrecisionTextures", config.fullPrecisionTextures);
     if (config.renderer == Renderer::Direct3D9 && config.windowMode == WindowMode::FullScreen) {
         // The Direct3D 9 renderer never changes the display mode: "full screen" is a borderless window.
         config.windowMode = WindowMode::Borderless;
