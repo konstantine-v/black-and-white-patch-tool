@@ -62,6 +62,7 @@ Config Config::Load(const std::filesystem::path& iniFile)
     config.discFromInstallFolder =
         ReadBool(iniFile, L"Fixes", L"DiscFromInstallFolder", config.discFromInstallFolder);
     config.promoteColorDepth16To32 = ReadBool(iniFile, L"Fixes", L"ColorDepth32", config.promoteColorDepth16To32);
+    config.displayModeFallback = ReadBool(iniFile, L"Fixes", L"DisplayModeFallback", config.displayModeFallback);
     config.dpiAware = ReadBool(iniFile, L"Fixes", L"DpiAware", config.dpiAware);
     config.executableSelfModifyingCode =
         ReadBool(iniFile, L"Fixes", L"ExecutableSelfModifyingCode", config.executableSelfModifyingCode);

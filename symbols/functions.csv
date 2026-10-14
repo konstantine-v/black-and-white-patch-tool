@@ -11343,7 +11343,7 @@ address,end,name,class,tu,status,notes
 0x00784380,0x007843f0,FUN_00784380,,,original,
 0x007843f0,0x00784430,FUN_007843f0,,,original,
 0x00784430,0x00784520,FUN_00784430,,,original,
-0x00784520,0x007846d0,FUN_00784520,,,original,
+0x00784520,0x007846d0,LH3DRender::Start,,,decompiled,
 0x007846d0,0x007847e0,FUN_007846d0,,,original,
 0x007847e0,0x007848f0,FUN_007847e0,,,original,
 0x007848f0,0x00784b20,FUN_007848f0,,,original,

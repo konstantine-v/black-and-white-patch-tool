@@ -13,8 +13,8 @@ This repository contains **no game code or data**. You need your own copy of the
 | | |
 |---|---|
 | Original | `runblack.exe` 1.00 (English), linked 2001-03-09, MSVC 6.0 SP5, 12,722 functions, 963 RTTI classes |
-| Decompiled | 14 functions (`CPUCheck`, `LHScreen::SetMode`, `LHScreen::GetAvailableVideoMemory`, `FindGameDisc`); run `.\build.ps1` for the current figure |
-| Fixes | SafeDisc, DirectX version check, 16-bit Direct3D crash, disc requirement, video-memory overflow, audio memory, DPI scaling, DEP, CPU detection ([docs/FIXES.md](docs/FIXES.md)) |
+| Decompiled | 15 functions (`CPUCheck`, `LHScreen::SetMode`, `LHScreen::GetAvailableVideoMemory`, `LH3DRender::Start`, `FindGameDisc`); run `.\build.ps1` for the current figure |
+| Fixes | SafeDisc, DirectX version check, 16-bit Direct3D crash, high-resolution crash, disc requirement, video-memory overflow, audio memory, DPI scaling, DEP, CPU detection ([docs/FIXES.md](docs/FIXES.md)) |
 | Status | Starts on Windows 10 and reaches the front end; see [CHANGELOG.md](CHANGELOG.md) |
 
 ## Supported executable
@@ -57,7 +57,8 @@ Then start `BWLaunch.exe` in the install folder. Problems are logged to `BWDecom
 switches fixes and diagnostics on or off. No disc and no administrator rights are needed.
 
 Settings are the game's own, in `HKEY_CURRENT_USER\Software\Lionhead Studios Ltd\Black & White\BWSetup` (`ScreenW`,
-`ScreenH`, `ScreenD`, `FullScreen`, `detailidx`); without them the game uses 800×600.
+`ScreenH`, `ScreenD`, `FullScreen`, `detailidx`); without them the game uses 800×600. Widths up to 2048 render
+natively (e.g. 1920×1080, 1920×1440); wider modes fall back to the largest one that works.
 
 ## Layout
 

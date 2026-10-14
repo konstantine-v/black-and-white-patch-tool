@@ -53,6 +53,16 @@ struct StdcallFunction<A, R(Args...)> {
     R operator()(Args... args) const { return reinterpret_cast<Pointer>(A)(args...); }
 };
 
+/// __fastcall: the first two integer or pointer arguments in ECX and EDX, the rest on the stack, popped by the callee.
+template <Address A, typename Signature>
+struct FastcallFunction;
+
+template <Address A, typename R, typename... Args>
+struct FastcallFunction<A, R(Args...)> {
+    using Pointer = R(__fastcall*)(Args...);
+    R operator()(Args... args) const { return reinterpret_cast<Pointer>(A)(args...); }
+};
+
 template <Address A, typename Signature>
 struct ThiscallFunction;
 

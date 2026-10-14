@@ -36,6 +36,17 @@ create a hardware Direct3D 7 device, or attach a z-buffer, on a 16-bit display m
 **Fix:** `LHScreen::SetMode` (`0x00748d70`) is decompiled and runs 16-bit requests at 32 bits (`ColorDepth32`). The
 game already supports 32-bit colour: textures, fonts and pixel formats follow the mode actually set.
 
+### Crash at resolutions wider than 2048 pixels
+
+**Symptom:** the game crashes at start-up above 1080p on 16:9 displays (2560×1440 and up); 1920×1440 works.
+**Cause:** Direct3D 7 on current drivers rejects back buffers wider than 2048 pixels as render targets:
+`IDirect3D7::CreateDevice` returns `DDERR_INVALIDOBJECT` (`0x88760082`). `LH3DRender::Start` (`0x00784520`) ignored
+the failed start-up and crashed on the null device.
+**Fix:** `LH3DRender::Start` is decompiled: it reports the `CreateDevice` error, releases the half-started renderer
+and returns 0. `LHScreen::SetMode` then tries the display's smaller modes, same aspect ratio first
+(`DisplayModeFallback`), so 2560×1440 runs at 1920×1080 instead of crashing. Rendering above 2048 pixels needs a
+renderer that does not go through Direct3D 7; that is planned with the decompilation of LH3D.
+
 ### Disc required
 
 **Symptom:** without the disc in a drive, the game sits on a black screen for 30 seconds and quits.
@@ -106,7 +117,7 @@ only ever selects that root, so settings (`Software\Lionhead Studios Ltd\Black &
 
 | Problem | What is known | Next step |
 |---|---|---|
-| Crash above 1080p / at high resolutions | Mode setting is `LHScreen::SetMode` (`0x00748d70` → `0x00748de0`); width/height are 16-bit there, so the limit is elsewhere (render buffers, interface layout or setup's mode list). | Reproduce under the launcher and decompile the faulting function. |
+| Native resolutions wider than 2048 | Direct3D 7 refuses such render targets (see above); the game falls back to a smaller mode. | Decompile LH3D's device layer and render through Direct3D 9/11, or render at ≤ 2048 and scale. |
 | Windowed mode | `0x00747050` creates an 800×600 `WS_OVERLAPPEDWINDOW`; `SetMode` switches styles. | Decompile `LHWin.cpp`/`LHScreen.cpp` window handling. |
 
 ## Official patches

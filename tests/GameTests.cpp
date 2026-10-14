@@ -132,6 +132,7 @@ TEST(HooksMatchOriginalConventions)
         {0x0045d4a0, Cdecl, 0},
         {0x005f1250, Cdecl, 0},     // FindGameDisc
         {0x00748d70, Thiscall, 12}, // LHScreen::SetMode: ret 0xc
+        {0x00784520, Cdecl, 0},     // LH3DRender::Start
         {0x00749a70, Thiscall, 0},  // LHScreen::GetAvailableVideoMemory: ret
     };
     for (const Expected& hook : expected) {
@@ -157,4 +158,18 @@ TEST(GameDiscIdentification)
     CHECK(black::IsGameDisc("BNW", "CDFS"));
     CHECK(!black::IsGameDisc("BNW", "NTFS"));
     CHECK(!black::IsGameDisc("BW2", "CDFS"));
+}
+
+TEST(FallbackModesPreferSameAspectThenSize)
+{
+    using lhlib::DisplayMode;
+    const DisplayMode available[] = {{640, 480}, {1920, 1080}, {1920, 1440}, {2560, 1440}, {1600, 900}, {3413, 1920}};
+    const auto ranked = lhlib::RankFallbackModes(available, {2560, 1440});
+    CHECK_EQ(ranked.size(), 4u);
+    if (ranked.size() == 4) {
+        CHECK(ranked[0] == (DisplayMode{1920, 1080}));  // 16:9, largest
+        CHECK(ranked[1] == (DisplayMode{1600, 900}));
+        CHECK(ranked[2] == (DisplayMode{1920, 1440}));  // 4:3, larger than 640x480
+        CHECK(ranked[3] == (DisplayMode{640, 480}));
+    }
 }

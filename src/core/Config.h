@@ -16,6 +16,7 @@ struct Config {
     bool directXVersionReport = true;            ///< DirectXVersionReport: answer the DirectX 7 start-up check.
     bool discFromInstallFolder = true;           ///< DiscFromInstallFolder: play without the disc.
     bool promoteColorDepth16To32 = true;         ///< ColorDepth32: run 16-bit modes at 32 bits.
+    bool displayModeFallback = true;             ///< DisplayModeFallback: step down when Direct3D refuses a mode.
     bool dpiAware = true;                        ///< DpiAware: opt out of Windows DPI virtualisation.
     bool executableSelfModifyingCode = true;     ///< ExecutableSelfModifyingCode: SELFMOD section runnable under DEP.
     std::uint32_t maxReportedPhysicalMemoryMiB = 512;  ///< MaxReportedPhysicalMemoryMB: 0 = unlimited.

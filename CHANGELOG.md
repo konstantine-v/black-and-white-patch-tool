@@ -4,6 +4,17 @@ Versions follow [semantic versioning](https://semver.org/) while the decompilati
 increases with each wave of decompiled code or fixes, the patch version for corrections. The version is set in
 `CMakeLists.txt` and tagged in git as `vX.Y.Z`.
 
+## 0.3.0
+
+High resolutions no longer crash the game.
+
+- Decompiled `LH3DRender::Start` (`LH3DLIB`): reports and unwinds a failed Direct3D start-up instead of crashing on the
+  null device.
+- `LHScreen::SetMode` falls back to smaller display modes, same aspect ratio first, when Direct3D refuses a mode
+  (`DisplayModeFallback`); 2560×1440 now runs at 1920×1080. Root cause: Direct3D 7 rejects render targets wider than
+  2048 pixels (`DDERR_INVALIDOBJECT`).
+- `FastcallFunction` wrapper for original `__fastcall` functions.
+
 ## 0.2.0
 
 First version that starts on Windows 10 and reaches the front end.

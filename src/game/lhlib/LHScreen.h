@@ -9,18 +9,33 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
+#include <vector>
 
 struct IDirectDraw;
 struct IDirectDrawSurface;
 
 namespace lhlib {
 
+struct DisplayMode {
+    std::int32_t width = 0;
+    std::int32_t height = 0;
+
+    [[nodiscard]] constexpr std::int64_t Area() const noexcept { return std::int64_t{width} * height; }
+    friend constexpr bool operator==(const DisplayMode&, const DisplayMode&) = default;
+};
+
+/// Modes to try when Direct3D refuses `requested`: smaller in both dimensions, same aspect ratio first, then by
+/// decreasing area.
+[[nodiscard]] std::vector<DisplayMode> RankFallbackModes(std::span<const DisplayMode> available, DisplayMode requested);
+
 /// Partially recovered. Members named unknownXX are untouched by decompiled code so far; their offsets are kept so
 /// that recovered members stay at the original positions.
 class LHScreen {
 public:
     /// Closes LH3D, switches the display mode and restarts LH3D. Returns 0 on success, 3 when the mode could not be
-    /// set, or the error of the one-time DirectDraw initialisation.
+    /// set, or the error of the one-time DirectDraw initialisation. Fixes: 16-bit requests run at 32 bits
+    /// (ColorDepth32); when Direct3D refuses the mode, smaller modes are tried (DisplayModeFallback).
     [[nodiscard]] std::int32_t SetMode(std::int32_t width, std::int32_t height,
                                        std::int32_t bitsPerPixel) noexcept;  // 0x00748d70
 
@@ -32,6 +47,7 @@ public:
     [[nodiscard]] std::uint16_t Height() const noexcept { return m_height; }
     [[nodiscard]] std::uint8_t BitsPerPixel() const noexcept { return m_bitsPerPixel; }
     [[nodiscard]] HWND Window() const noexcept { return m_window; }
+    [[nodiscard]] IDirectDrawSurface* BackSurface() const noexcept { return m_backSurface; }
 
 private:
     friend struct LHScreenLayout;

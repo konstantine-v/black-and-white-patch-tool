@@ -3,10 +3,12 @@
 #include "core/Config.h"
 #include "core/Hook.h"
 #include "core/Log.h"
+#include "game/lh3dlib/LH3DRender.h"
 
 #include <ddraw.h>
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 
 namespace lhlib {
@@ -24,8 +26,49 @@ inline constexpr bw::CdeclFunction<0x007cc7e0, void()> CloseRenderer{};
 inline constexpr bw::CdeclFunction<0x007cc7d0, std::int32_t()> StartRenderer{};
 
 constexpr std::int32_t kSetModeFailed = 3;
+constexpr std::size_t kMaxFallbackAttempts = 6;
+
+/// Every display mode of the primary display at `bitsPerPixel`.
+std::vector<DisplayMode> AvailableModes(std::int32_t bitsPerPixel)
+{
+    std::vector<DisplayMode> modes;
+    DEVMODEW mode{};
+    mode.dmSize = sizeof mode;
+    for (DWORD index = 0; EnumDisplaySettingsW(nullptr, index, &mode); ++index) {
+        if (static_cast<std::int32_t>(mode.dmBitsPerPel) != bitsPerPixel) {
+            continue;
+        }
+        const DisplayMode candidate{static_cast<std::int32_t>(mode.dmPelsWidth),
+                                    static_cast<std::int32_t>(mode.dmPelsHeight)};
+        if (std::ranges::find(modes, candidate) == modes.end()) {
+            modes.push_back(candidate);
+        }
+    }
+    return modes;
+}
 
 }  // namespace
+
+std::vector<DisplayMode> RankFallbackModes(std::span<const DisplayMode> available, DisplayMode requested)
+{
+    const double requestedAspect = static_cast<double>(requested.width) / requested.height;
+    auto sameAspect = [&](const DisplayMode& mode) {
+        return std::abs(static_cast<double>(mode.width) / mode.height - requestedAspect) < 0.01;
+    };
+    std::vector<DisplayMode> ranked;
+    for (const DisplayMode& mode : available) {
+        if (mode.Area() < requested.Area() && mode.width <= requested.width && mode.height <= requested.height) {
+            ranked.push_back(mode);
+        }
+    }
+    std::ranges::sort(ranked, [&](const DisplayMode& a, const DisplayMode& b) {
+        if (sameAspect(a) != sameAspect(b)) {
+            return sameAspect(a);
+        }
+        return a.Area() > b.Area();
+    });
+    return ranked;
+}
 
 std::int32_t LHScreen::SetMode(std::int32_t width, std::int32_t height, std::int32_t bitsPerPixel) noexcept
 {
@@ -38,19 +81,40 @@ std::int32_t LHScreen::SetMode(std::int32_t width, std::int32_t height, std::int
         RestoreFonts();
     }
 
-    const std::int32_t depth = EffectiveColorDepth(bitsPerPixel, bw::GetConfig().promoteColorDepth16To32);
+    const bw::Config& config = bw::GetConfig();
+    const std::int32_t depth = EffectiveColorDepth(bitsPerPixel, config.promoteColorDepth16To32);
     if (depth != bitsPerPixel) {
         bw::log::Info("LHScreen: {}x{} requested at {} bits, using {} bits", width, height, bitsPerPixel, depth);
     }
 
     CloseRenderer();
-    const std::int32_t result = ApplyMode(this, width, height, depth);
+    std::int32_t result = ApplyMode(this, width, height, depth);
     if (result == kSetModeFailed) {
         bw::log::Error("LHScreen: cannot set {}x{}x{}", width, height, depth);
         return kSetModeFailed;
     }
     m_modeSet = 1;
-    StartRenderer();
+    if (StartRenderer() != 0 || lh3dlib::g_renderEnabled == 0 || !config.displayModeFallback) {
+        return result;
+    }
+
+    // Direct3D refused this mode (current drivers reject render targets wider than 2048 pixels). Step down
+    // through the display's smaller modes, same aspect ratio first, until the renderer starts.
+    try {
+        const std::vector<DisplayMode> fallbacks = RankFallbackModes(AvailableModes(depth), {width, height});
+        for (std::size_t attempt = 0; attempt < std::min(fallbacks.size(), kMaxFallbackAttempts); ++attempt) {
+            const DisplayMode& mode = fallbacks[attempt];
+            bw::log::Warning("LHScreen: trying {}x{} instead of {}x{}", mode.width, mode.height, width, height);
+            result = ApplyMode(this, mode.width, mode.height, depth);
+            if (result != kSetModeFailed && StartRenderer() != 0) {
+                bw::log::Info("LHScreen: running at {}x{}x{}", mode.width, mode.height, depth);
+                return result;
+            }
+        }
+    }
+    catch (const std::bad_alloc&) {
+    }
+    bw::log::Error("LHScreen: no display mode with a Direct3D device");
     return result;
 }
 
