@@ -18,6 +18,8 @@ E:/Tools/re-venv/Scripts/python -m pip install capstone==5.0.6 pefile==2024.8.26
 | `cstr.py <exe> <va>...` | Print C strings at addresses |
 | `find_imm.py <exe> <functions.csv> <value>...` | Instructions using given constants |
 | `threads.py <pid or runblack.exe> [functions.csv]` | Registers and return addresses of every thread of the running game (64-bit Python) |
+| `dx_methods.py [--cpp <out.inc>]` | DirectDraw/Direct3D 7 vtable layouts from the Windows SDK headers |
+| `directx_report.py <BWDecomp.directx.csv> [functions.csv] [--markdown]` | Summary of a `TraceDirectX` run |
 | `screenshot.py <pid or runblack.exe>` | Saves the game's next frame to `Screenshots\` and prints the path |
 | `install/install_game.py --iso <BNW.iso> --dest <folder> [--decomp <build>]` | Install the game from the disc image (needs 7-Zip) |
 | `install/iscab_extract.py <data1.hdr> <out>` | Extract InstallShield 5/6 cabinets with MD5 verification |

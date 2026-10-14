@@ -4,6 +4,16 @@ Versions follow [semantic versioning](https://semver.org/) while the decompilati
 increases with each wave of decompiled code or fixes, the patch version for corrections. The version is set in
 `CMakeLists.txt` and tagged in git as `vX.Y.Z`.
 
+## 0.6.0
+
+Groundwork for a Direct3D 9 renderer: what the game asks of DirectDraw and Direct3D 7.
+
+- `[Diagnostics] TraceDirectX`: counts every DirectDraw/Direct3D 7 method call per calling function and writes
+  `BWDecomp.directx.csv`; `tools/directx_report.py` summarises it. Handles Direct3D 7's per-device method tables and
+  its rewriting of the draw entries, and reports method pointers the game copies.
+- `docs/RENDERER.md`: the measured API usage and the design of the replacement renderer.
+- `tools/dx_methods.py`: interface method tables generated from the Windows SDK headers.
+
 ## 0.5.0
 
 Windowed and borderless play, scaled to any window size.

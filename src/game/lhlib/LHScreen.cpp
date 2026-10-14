@@ -3,6 +3,7 @@
 #include "core/Config.h"
 #include "core/Hook.h"
 #include "core/Log.h"
+#include "diagnostics/DirectXTrace.h"
 #include "diagnostics/Screenshot.h"
 #include "game/lh3dlib/LH3DRender.h"
 
@@ -256,6 +257,7 @@ void LHScreen::SetFullScreen(std::int32_t fullScreen) noexcept
 
 std::int32_t LHScreen::Flip(std::int32_t swapBuffers) noexcept
 {
+    bw::diagnostics::RefreshDirectXTrace();
     if (m_locked == 0 && bw::diagnostics::ScreenshotRequested()) {
         bw::diagnostics::SaveScreenshot(m_backSurface);
     }

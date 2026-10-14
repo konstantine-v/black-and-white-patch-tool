@@ -82,5 +82,6 @@ save PNG screenshots to `Screenshots\` in the game folder; `tools/screenshot.py`
 | `tools/` | Analysis and verification scripts (Python, static analysis only) |
 | `tests/` | Unit tests and the hook-manifest writer |
 
-Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how replacement works and [docs/WORKFLOW.md](docs/WORKFLOW.md)
+Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how replacement works, [docs/RENDERER.md](docs/RENDERER.md) for the
+renderer plan and [docs/WORKFLOW.md](docs/WORKFLOW.md)
 before decompiling a function.

@@ -3,6 +3,7 @@
 #include "Test.h"
 
 #include "core/Hook.h"
+#include "diagnostics/DirectXTrace.h"
 #include "diagnostics/Screenshot.h"
 #include "fixes/Fixes.h"
 #include "game/black/CPUCheck.h"
@@ -10,6 +11,7 @@
 #include "game/lhlib/LHScreen.h"
 
 #include <algorithm>
+#include <memory>
 #include <limits>
 
 using black::CpuSignature;
@@ -282,4 +284,26 @@ TEST(FrameMappingRoundTrips)
     CHECK(p.x == 0 && p.y == 0);
     p = lhlib::MapToFrame({2550, 2000}, pillar, {1600, 1200});
     CHECK(p.x == 1599 && p.y == 1199);
+}
+
+TEST(CallCounterCountsPerMethodAndCaller)
+{
+    auto counter = std::make_unique<bw::diagnostics::CallCounter>();
+    for (int i = 0; i < 1000; ++i) {
+        counter->Add(0x0d14, 0x00784600);  // IDirect3DDevice7::SetRenderState from one caller
+    }
+    counter->Add(0x0d14, 0x00784700);
+    counter->Add(0x0d23, 0x00784600);
+    std::uint32_t total = 0;
+    std::uint32_t entries = 0;
+    counter->ForEach([&](const bw::diagnostics::CallCounter::Entry& entry) {
+        ++entries;
+        total += entry.count;
+        if (entry.method == 0x0d14 && entry.caller == 0x00784600) {
+            CHECK_EQ(entry.count, 1000u);
+        }
+    });
+    CHECK_EQ(entries, 3u);
+    CHECK_EQ(total, 1002u);
+    CHECK_EQ(counter->Dropped(), 0u);
 }

@@ -43,6 +43,7 @@ struct Config {
     bool traceExit = true;                       ///< TraceExit: log ExitProcess/PostQuitMessage/MessageBoxA callers.
     bool traceExceptions = true;                 ///< TraceExceptions: log exceptions with a stack scan.
     bool forwardDebugOutput = false;             ///< ForwardDebugOutput: copy the game's OutputDebugString to the log.
+    bool traceDirectX = false;                   ///< TraceDirectX: count DirectDraw/Direct3D calls per caller.
     std::uint32_t screenshotKey = 0;             ///< ScreenshotKey: virtual-key code that saves a screenshot; 0 = none.
 
     // [Log]

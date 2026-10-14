@@ -77,7 +77,8 @@ For hangs, `tools/threads.py <pid>` suspends each thread of the running game in 
 the return addresses on its stack, named from `symbols/functions.csv`; the shutdown watchdog logs the same from
 inside the process. Full-screen DirectDraw cannot be captured from outside, so `LHScreen::Flip` saves the frame
 itself when `tools/screenshot.py <pid>` signals it (or `ScreenshotKey` is pressed): the way to check rendering
-changes without looking at the screen.
+changes without looking at the screen. `TraceDirectX` counts every DirectDraw/Direct3D call per calling function
+([RENDERER.md](RENDERER.md)).
 
 ## Symbols
 

@@ -83,6 +83,7 @@ Config Config::Load(const std::filesystem::path& iniFile)
     config.traceExit = ReadBool(iniFile, L"Diagnostics", L"TraceExit", config.traceExit);
     config.traceExceptions = ReadBool(iniFile, L"Diagnostics", L"TraceExceptions", config.traceExceptions);
     config.forwardDebugOutput = ReadBool(iniFile, L"Diagnostics", L"ForwardDebugOutput", config.forwardDebugOutput);
+    config.traceDirectX = ReadBool(iniFile, L"Diagnostics", L"TraceDirectX", config.traceDirectX);
     config.screenshotKey = ReadUnsigned(iniFile, L"Diagnostics", L"ScreenshotKey", config.screenshotKey);
     config.logDebug = ReadBool(iniFile, L"Log", L"Debug", config.logDebug);
 

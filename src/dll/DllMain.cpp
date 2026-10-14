@@ -8,6 +8,7 @@
 #include "core/Version.h"
 #include "core/Windows.h"
 #include "diagnostics/Diagnostics.h"
+#include "diagnostics/DirectXTrace.h"
 #include "fixes/Fixes.h"
 
 #include <filesystem>
@@ -58,6 +59,9 @@ bool Attach(HMODULE self)
     }
 
     bw::diagnostics::Install(game, bw::GetConfig());
+    if (bw::GetConfig().traceDirectX) {
+        bw::diagnostics::InstallDirectXTrace(game, directory / L"BWDecomp.directx.csv");
+    }
     bw::fixes::InstallAll(game, bw::GetConfig());
 
     const std::optional<bw::image::Section> text = bw::image::FindSection(game, ".text");
@@ -72,6 +76,10 @@ bool Attach(HMODULE self)
 
 BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID /*reserved*/)
 {
+    if (reason == DLL_PROCESS_DETACH) {
+        bw::diagnostics::WriteDirectXTrace();
+        return TRUE;
+    }
     if (reason != DLL_PROCESS_ATTACH) {
         return TRUE;
     }

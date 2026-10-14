@@ -3,6 +3,7 @@
 #include "core/Call.h"
 #include "core/Hook.h"
 #include "core/Log.h"
+#include "diagnostics/DirectXTrace.h"
 #include "game/lhlib/LHScreen.h"
 
 namespace lh3dlib {
@@ -75,6 +76,7 @@ std::int32_t LH3DRender::Start() noexcept
         return 0;
     }
 
+    bw::diagnostics::TraceDirect3DDevice(g_device);
     SetViewport(lhlib::g_screen.Width(), lhlib::g_screen.Height());
     InitialiseMaterials();
     float* vector = &g_vector00dc8cd0;
