@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(BlackWhiteDecomp VERSION 0.6.0 LANGUAGES CXX)
+project(BlackWhiteDecomp VERSION 0.7.0 LANGUAGES CXX)
 
 if(NOT MSVC OR NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
     message(FATAL_ERROR "Build with MSVC for 32-bit x86 (-A Win32): the code runs inside the 32-bit runblack.exe.")
@@ -43,8 +43,18 @@ add_library(bw_game OBJECT
     src/diagnostics/Diagnostics.cpp
     src/diagnostics/DirectXTrace.cpp
     src/diagnostics/Screenshot.cpp
+    src/render/Com.cpp
+    src/render/DepthView.cpp
+    src/render/Device.cpp
+    src/render/DirectDraw.cpp
+    src/render/Format.cpp
+    src/render/Gpu.cpp
+    src/render/Pixels.cpp
+    src/render/Renderer.cpp
+    src/render/Surface.cpp
+    src/render/Translate.cpp
     src/fixes/Fixes.cpp)
-target_link_libraries(bw_game PUBLIC bw_core ddraw dxguid)
+target_link_libraries(bw_game PUBLIC bw_core ddraw dxguid d3d9)
 
 add_library(BWDecomp SHARED src/dll/DllMain.cpp)
 target_link_libraries(BWDecomp PRIVATE bw_game)
@@ -53,6 +63,6 @@ add_executable(BWLaunch WIN32 src/launcher/Launcher.cpp)
 target_link_libraries(BWLaunch PRIVATE bw_core shell32)
 
 enable_testing()
-add_executable(bw_tests tests/TestMain.cpp tests/CoreTests.cpp tests/GameTests.cpp)
+add_executable(bw_tests tests/TestMain.cpp tests/CoreTests.cpp tests/GameTests.cpp tests/RenderTests.cpp)
 target_link_libraries(bw_tests PRIVATE bw_game)
 add_test(NAME unit COMMAND bw_tests)

@@ -4,6 +4,18 @@ Versions follow [semantic versioning](https://semver.org/) while the decompilati
 increases with each wave of decompiled code or fixes, the patch version for corrections. The version is set in
 `CMakeLists.txt` and tagged in git as `vX.Y.Z`.
 
+## 0.7.0
+
+A Direct3D 9 renderer: the game at native resolutions above 2048 pixels.
+
+- `[Display] Renderer=1` (experimental, off by default): DirectDraw and Direct3D 7 implemented on Direct3D 9Ex
+  (`src/render`). Tested with the intro videos, the front end and a skirmish game, at 1920x1080 and 2560x1440, with
+  quitting, minimising and restoring. `VSync` and `Anisotropy` settings.
+- Compressed (DXT) surfaces: decoding and encoding in blits, sizes reported as DirectDraw does.
+- Depth reads (the sun-visibility test) through a lazily filled view: only touched pages are read back.
+- `LHScreen::Flip` skips the per-frame back-buffer lock with the new renderer (the software rasteriser is dead code).
+- Debug aids: frame rate and per-frame statistics, surface/blit kinds, texture dumps (`BW_DUMP_TEXTURES`).
+
 ## 0.6.0
 
 Groundwork for a Direct3D 9 renderer: what the game asks of DirectDraw and Direct3D 7.

@@ -38,6 +38,11 @@ void Open(const std::filesystem::path& file, bool debug) noexcept
                          FILE_ATTRIBUTE_NORMAL, nullptr);
 }
 
+bool DebugEnabled() noexcept
+{
+    return g_debug;
+}
+
 void Write(Level level, std::string_view message) noexcept
 {
     if (level == Level::Debug && !g_debug) {

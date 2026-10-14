@@ -10,6 +10,7 @@
 #include "diagnostics/Diagnostics.h"
 #include "diagnostics/DirectXTrace.h"
 #include "fixes/Fixes.h"
+#include "render/Renderer.h"
 
 #include <filesystem>
 
@@ -59,8 +60,14 @@ bool Attach(HMODULE self)
     }
 
     bw::diagnostics::Install(game, bw::GetConfig());
+    bw::render::Install(game, bw::GetConfig());
     if (bw::GetConfig().traceDirectX) {
-        bw::diagnostics::InstallDirectXTrace(game, directory / L"BWDecomp.directx.csv");
+        if (bw::render::Active()) {
+            bw::log::Info("TraceDirectX applies to the original renderer only; ignored");
+        }
+        else {
+            bw::diagnostics::InstallDirectXTrace(game, directory / L"BWDecomp.directx.csv");
+        }
     }
     bw::fixes::InstallAll(game, bw::GetConfig());
 

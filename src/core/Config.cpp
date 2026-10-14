@@ -2,6 +2,7 @@
 
 #include "core/Windows.h"
 
+#include <algorithm>
 #include <array>
 #include <charconv>
 #include <string>
@@ -80,6 +81,13 @@ Config Config::Load(const std::filesystem::path& iniFile)
                             ? static_cast<WindowMode>(windowMode)
                             : WindowMode::FullScreen;
     config.keepAspectRatio = ReadBool(iniFile, L"Display", L"KeepAspectRatio", config.keepAspectRatio);
+    config.renderer = ReadUnsigned(iniFile, L"Display", L"Renderer", 0) == 1 ? Renderer::Direct3D9 : Renderer::Direct3D7;
+    config.vsync = ReadBool(iniFile, L"Display", L"VSync", config.vsync);
+    config.anisotropy = std::min<std::uint32_t>(ReadUnsigned(iniFile, L"Display", L"Anisotropy", config.anisotropy), 16);
+    if (config.renderer == Renderer::Direct3D9 && config.windowMode == WindowMode::FullScreen) {
+        // The Direct3D 9 renderer never changes the display mode: "full screen" is a borderless window.
+        config.windowMode = WindowMode::Borderless;
+    }
     config.traceExit = ReadBool(iniFile, L"Diagnostics", L"TraceExit", config.traceExit);
     config.traceExceptions = ReadBool(iniFile, L"Diagnostics", L"TraceExceptions", config.traceExceptions);
     config.forwardDebugOutput = ReadBool(iniFile, L"Diagnostics", L"ForwardDebugOutput", config.forwardDebugOutput);

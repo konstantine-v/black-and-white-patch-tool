@@ -9,6 +9,12 @@
 
 namespace bw {
 
+/// [Display] Renderer.
+enum class Renderer : std::uint8_t {
+    Direct3D7 = 0,  ///< The original DirectDraw/Direct3D 7 path.
+    Direct3D9 = 1,  ///< DirectDraw/Direct3D 7 emulated on Direct3D 9Ex (render/Renderer.h).
+};
+
 /// [Display] WindowMode.
 enum class WindowMode : std::uint8_t {
     FullScreen = 0,  ///< Exclusive full screen, as the original.
@@ -35,6 +41,9 @@ struct Config {
     // [Display]
     WindowMode windowMode = WindowMode::FullScreen;  ///< WindowMode: 0 full screen, 1 window, 2 borderless.
     bool keepAspectRatio = true;                 ///< KeepAspectRatio: black bars instead of stretching.
+    Renderer renderer = Renderer::Direct3D7;     ///< Renderer: 0 Direct3D 7 (original), 1 Direct3D 9.
+    bool vsync = true;                           ///< VSync: Direct3D 9 renderer waits for the display refresh.
+    std::uint32_t anisotropy = 0;                ///< Anisotropy: Direct3D 9 renderer's anisotropic filtering, 0 = off.
 
     // [Hooks]
     std::vector<Address> disabledHooks;          ///< Disabled: original addresses that keep running original code.

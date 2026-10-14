@@ -6,6 +6,7 @@
 #include "diagnostics/DirectXTrace.h"
 #include "diagnostics/Screenshot.h"
 #include "game/lh3dlib/LH3DRender.h"
+#include "render/Renderer.h"
 
 #include <ddraw.h>
 
@@ -258,6 +259,24 @@ void LHScreen::SetFullScreen(std::int32_t fullScreen) noexcept
 std::int32_t LHScreen::Flip(std::int32_t swapBuffers) noexcept
 {
     bw::diagnostics::RefreshDirectXTrace();
+    if (bw::log::DebugEnabled()) {
+        static ULONGLONG start = GetTickCount64();
+        static std::uint32_t frames = 0;
+        ++frames;
+        if (const ULONGLONG elapsed = GetTickCount64() - start; elapsed >= 10'000) {
+            bw::log::Debug("LHScreen: {:.1f} frames per second", frames * 1000.0 / static_cast<double>(elapsed));
+            if (bw::render::Active()) {
+                const auto statistics = bw::render::gpu::TakeStatistics();
+                bw::log::Debug("  per frame: {:.0f} draws, {:.2f} texture uploads, {:.2f} depth reads, {:.2f} frame "
+                               "reads, {:.2f} frame writes",
+                               statistics.draws / double(frames), statistics.textureUploads / double(frames),
+                               statistics.depthReads / double(frames), statistics.targetReads / double(frames),
+                               statistics.targetWrites / double(frames));
+            }
+            frames = 0;
+            start = GetTickCount64();
+        }
+    }
     if (m_locked == 0 && bw::diagnostics::ScreenshotRequested()) {
         bw::diagnostics::SaveScreenshot(m_backSurface);
     }
@@ -282,7 +301,10 @@ std::int32_t LHScreen::Flip(std::int32_t swapBuffers) noexcept
         }
         AfterFlip00749340(this, 0, 0);
     }
-    if (Lock(0) == 0) {
+    // Refreshes the software rasteriser's pointer to the back buffer. The rasteriser is dead code in this build
+    // (nothing calls into SELFMOD except the pointer update itself), so the Direct3D 9 renderer skips the lock, which
+    // would read the frame back from the GPU.
+    if (!bw::render::Active() && Lock(0) == 0) {
         Unlock();
     }
     return 0;

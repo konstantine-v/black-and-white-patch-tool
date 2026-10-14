@@ -161,7 +161,7 @@ only ever selects that root, so settings (`Software\Lionhead Studios Ltd\Black &
 
 | Problem | What is known | Next step |
 |---|---|---|
-| Rendering wider than 2048 pixels | Direct3D 7 refuses such render targets (see above), also in windowed mode; `WindowMode=2` scales a ≤ 2048 render to the screen instead. | Decompile LH3D's device layer and render through Direct3D 9/11. |
+| Rendering wider than 2048 pixels with the original renderer | Direct3D 7 refuses such render targets (see above), also in windowed mode. The Direct3D 9 renderer (`Renderer=1`, [RENDERER.md](RENDERER.md)) renders at any resolution. | Make the Direct3D 9 renderer the default once it has been played more. |
 | Videos in window modes | Bink videos draw straight into the primary surface at the window's position (`LHScreen` `+0x20`, `0x007498d0`), unscaled. | Decompile the video playback path. |
 
 ## Official patches

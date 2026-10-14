@@ -12,6 +12,8 @@ enum class Level { Debug, Info, Warning, Error };
 
 void Open(const std::filesystem::path& file, bool debug) noexcept;
 void Write(Level level, std::string_view message) noexcept;
+/// True when Debug messages are written ([Log] Debug=1); lets callers skip work for them.
+[[nodiscard]] bool DebugEnabled() noexcept;
 
 template <typename... Args>
 void Format(Level level, std::format_string<Args...> format, Args&&... args) noexcept

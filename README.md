@@ -14,7 +14,7 @@ This repository contains **no game code or data**. You need your own copy of the
 |---|---|
 | Original | `runblack.exe` 1.00 (English), linked 2001-03-09, MSVC 6.0 SP5, 12,722 functions, 963 RTTI classes |
 | Decompiled | 24 functions (`CPUCheck`, `LHScreen` mode setting and presentation, `LHWin` window, quit and message handling, `LHMouse::SetPosition`, `LH3DRender::Start`, `FindGameDisc`); run `.\build.ps1` for the current figure |
-| Fixes | SafeDisc, DirectX version check, 16-bit Direct3D crash, high-resolution crash, windowed and borderless modes with scaling, hangs on quitting, disc requirement, video-memory overflow, audio memory, DPI scaling, DEP, CPU detection ([docs/FIXES.md](docs/FIXES.md)) |
+| Fixes | SafeDisc, DirectX version check, 16-bit Direct3D crash, high-resolution crash, Direct3D 9 renderer for native high resolutions, windowed and borderless modes with scaling, hangs on quitting, disc requirement, video-memory overflow, audio memory, DPI scaling, DEP, CPU detection ([docs/FIXES.md](docs/FIXES.md)) |
 | Status | Plays on Windows 10 and quits cleanly; see [CHANGELOG.md](CHANGELOG.md) |
 
 ## Supported executable
@@ -65,6 +65,10 @@ borderless window covering the screen (2). In modes 1 and 2 the picture is scale
 wider than 2048 pixels mode 2 fills the screen from a 1920×1080 render without changing the display mode, and
 Alt+Tab is instant.
 
+`[Display] Renderer=1` (experimental) replaces DirectDraw/Direct3D 7 with a Direct3D 9 renderer: native resolutions
+above 2048 pixels (e.g. 2560×1440), no display-mode switch, vsync and anisotropic filtering options. See
+[docs/RENDERER.md](docs/RENDERER.md).
+
 Print Screen cannot capture the full-screen game. Set `ScreenshotKey` in `BWDecomp.ini` (e.g. `123` for F12) to
 save PNG screenshots to `Screenshots\` in the game folder; `tools/screenshot.py` does the same from outside.
 
@@ -76,6 +80,7 @@ save PNG screenshots to `Screenshots\` in the game folder; `tools/screenshot.py`
 | `src/game/black` | Decompiled game code, one file per original translation unit (`C:\dev\black\*.cpp`) |
 | `src/game/lhlib` | Decompiled Lionhead library code (`C:\DEV\Libs\LIONHEAD\lhlib\VER5.0\*.cpp`) |
 | `src/fixes` | Compatibility fixes outside decompiled functions (process settings, import patches) |
+| `src/render` | Direct3D 9 renderer: DirectDraw/Direct3D 7 implemented on Direct3D 9Ex |
 | `src/diagnostics` | Run-time tracing without a debugger: exits, message boxes, exceptions, thread stacks, game debug output, screenshots |
 | `src/dll`, `src/launcher` | `BWDecomp.dll` entry point and `BWLaunch.exe` |
 | `symbols/functions.csv` | Every original function: address, end, name, class, original source file, status |
