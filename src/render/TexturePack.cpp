@@ -4,9 +4,6 @@
 #include "core/Windows.h"
 #include "render/Format.h"
 
-#include <wincodec.h>
-#include <wrl/client.h>
-
 #include <algorithm>
 #include <cctype>
 #include <format>
@@ -17,8 +14,6 @@
 namespace bw::render::textures {
 
 namespace {
-
-using Microsoft::WRL::ComPtr;
 
 struct State {
     Settings settings;
@@ -39,84 +34,32 @@ State& GetState()
 constexpr std::wstring_view kPrefix = L"bw_";
 constexpr std::size_t kHashDigits = 16;
 
+/// A source name usable as a path below Dump\: relative, without ".." components.
+bool IsSafeRelativeName(std::string_view name)
+{
+    if (name.empty()) {
+        return false;
+    }
+    const std::filesystem::path path(name);
+    if (path.has_root_name() || path.has_root_directory()) {
+        return false;
+    }
+    for (const std::filesystem::path& part : path) {
+        if (part == "..") {
+            return false;
+        }
+    }
+    return true;
+}
+
+void IndexReplacements(State& state, const std::filesystem::path& folder);
+
 bool IsImageFile(const std::filesystem::path& path)
 {
     std::wstring extension = path.extension().wstring();
     std::transform(extension.begin(), extension.end(), extension.begin(), [](wchar_t c) { return towlower(c); });
     return extension == L".png" || extension == L".dds" || extension == L".bmp" || extension == L".jpg" ||
            extension == L".jpeg" || extension == L".tif" || extension == L".tiff";
-}
-
-/// The WIC factory of the calling thread. The game's rendering thread gets a single-threaded apartment, which is what
-/// CoInitialize gives and what the game's own COM use (DirectPlay) expects.
-IWICImagingFactory* Factory() noexcept
-{
-    thread_local ComPtr<IWICImagingFactory> factory;
-    if (!factory) {
-        const HRESULT apartment = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-        if (FAILED(apartment) && apartment != RPC_E_CHANGED_MODE) {
-            return nullptr;
-        }
-        if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory)))) {
-            log::Warning("Textures: Windows Imaging Component is not available");
-            return nullptr;
-        }
-    }
-    return factory.Get();
-}
-
-bool WritePng(const std::filesystem::path& path, const Image& image) noexcept
-{
-    IWICImagingFactory* factory = Factory();
-    if (factory == nullptr) {
-        return false;
-    }
-    ComPtr<IWICStream> stream;
-    ComPtr<IWICBitmapEncoder> encoder;
-    ComPtr<IWICBitmapFrameEncode> frame;
-    WICPixelFormatGUID format = GUID_WICPixelFormat32bppBGRA;  // A8R8G8B8 in memory
-    const UINT stride = image.width * 4;
-    return SUCCEEDED(factory->CreateStream(&stream)) &&
-           SUCCEEDED(stream->InitializeFromFilename(path.c_str(), GENERIC_WRITE)) &&
-           SUCCEEDED(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder)) &&
-           SUCCEEDED(encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache)) &&
-           SUCCEEDED(encoder->CreateNewFrame(&frame, nullptr)) && SUCCEEDED(frame->Initialize(nullptr)) &&
-           SUCCEEDED(frame->SetSize(image.width, image.height)) && SUCCEEDED(frame->SetPixelFormat(&format)) &&
-           format == GUID_WICPixelFormat32bppBGRA &&
-           SUCCEEDED(frame->WritePixels(image.height, stride, stride * image.height,
-                                        reinterpret_cast<BYTE*>(const_cast<std::uint32_t*>(image.argb.data())))) &&
-           SUCCEEDED(frame->Commit()) && SUCCEEDED(encoder->Commit());
-}
-
-bool ReadImage(const std::filesystem::path& path, Image& image) noexcept
-{
-    IWICImagingFactory* factory = Factory();
-    if (factory == nullptr) {
-        return false;
-    }
-    ComPtr<IWICBitmapDecoder> decoder;
-    ComPtr<IWICBitmapFrameDecode> frame;
-    ComPtr<IWICFormatConverter> converter;
-    UINT width = 0;
-    UINT height = 0;
-    if (FAILED(factory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand,
-                                                  &decoder)) ||
-        FAILED(decoder->GetFrame(0, &frame)) || FAILED(frame->GetSize(&width, &height)) || width == 0 ||
-        height == 0 || FAILED(factory->CreateFormatConverter(&converter)) ||
-        FAILED(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppBGRA, WICBitmapDitherTypeNone, nullptr, 0.0,
-                                     WICBitmapPaletteTypeCustom))) {
-        return false;
-    }
-    try {
-        image.argb.resize(std::size_t{width} * height);
-    }
-    catch (const std::bad_alloc&) {
-        return false;
-    }
-    image.width = width;
-    image.height = height;
-    return SUCCEEDED(converter->CopyPixels(nullptr, width * 4, width * height * 4,
-                                           reinterpret_cast<BYTE*>(image.argb.data())));
 }
 
 }  // namespace
@@ -131,7 +74,18 @@ void Initialise(const Settings& settings) noexcept
     if (!settings.replace) {
         return;
     }
-    const std::filesystem::path folder = settings.folder / L"Replace";
+    try {
+        IndexReplacements(state, settings.folder / L"Replace");
+    }
+    catch (const std::exception&) {
+        log::Warning("Textures: indexing the replacements failed");
+    }
+}
+
+namespace {
+
+void IndexReplacements(State& state, const std::filesystem::path& folder)
+{
     std::error_code error;
     for (auto it = std::filesystem::recursive_directory_iterator(folder, error);
          !error && it != std::filesystem::recursive_directory_iterator(); it.increment(error)) {
@@ -142,22 +96,24 @@ void Initialise(const Settings& settings) noexcept
         if (ParseHashName(it->path().filename().wstring(), hash)) {
             const auto [existing, added] = state.replacementsByHash.emplace(hash, it->path());
             if (!added) {
-                log::Warning("Textures: two replacements for {}; using {}", std::filesystem::path(HashName(hash)).string(),
-                             existing->second.string());
+                log::Warning("Textures: two replacements for {}; using {}", log::PathText(HashName(hash)),
+                             log::PathText(existing->second));
             }
             continue;
         }
-        const std::string name = NormaliseName(it->path().lexically_relative(folder).string());
+        const std::string name = NormaliseName(log::PathText(it->path().lexically_relative(folder)));
         const auto [existing, added] = state.replacementsByName.emplace(name, it->path());
         if (!added) {
-            log::Warning("Textures: two replacements for {}; using {}", name, existing->second.string());
+            log::Warning("Textures: two replacements for {}; using {}", name, log::PathText(existing->second));
         }
     }
     const std::size_t count = state.replacementsByHash.size() + state.replacementsByName.size();
     if (count != 0) {
-        log::Info("Textures: {} replacements in {}", count, folder.string());
+        log::Info("Textures: {} replacements in {}", count, log::PathText(folder));
     }
 }
+
+}  // namespace
 
 bool Active() noexcept
 {
@@ -245,10 +201,15 @@ void RegisterSource(std::uint64_t hash, Source source) noexcept
 {
     State& state = GetState();
     std::lock_guard lock(state.mutex);
-    Source& entry = state.sources[hash];
-    state.fullColourSources -= entry.image ? 1 : 0;
-    state.fullColourSources += source.image ? 1 : 0;
-    entry = std::move(source);
+    try {
+        Source& entry = state.sources[hash];
+        state.fullColourSources -= entry.image ? 1 : 0;
+        state.fullColourSources += source.image ? 1 : 0;
+        entry = std::move(source);
+    }
+    catch (const std::bad_alloc&) {
+        // Not registered: the texture keeps its hash name.
+    }
 }
 
 bool FindSource(std::uint64_t hash, Source& source) noexcept
@@ -259,7 +220,12 @@ bool FindSource(std::uint64_t hash, Source& source) noexcept
     if (it == state.sources.end()) {
         return false;
     }
-    source = it->second;
+    try {
+        source = it->second;
+    }
+    catch (const std::bad_alloc&) {
+        return false;
+    }
     return true;
 }
 
@@ -272,30 +238,35 @@ bool WantsDump(std::uint64_t hash) noexcept
 
 void Dump(std::uint64_t hash, std::string_view name, Format format, const Image& image) noexcept
 {
-    State& state = GetState();
-    std::filesystem::path path;
-    {
-        std::lock_guard lock(state.mutex);
-        if (!state.settings.dump || !state.dumped.insert(hash).second) {
+    try {
+        State& state = GetState();
+        std::filesystem::path path;
+        {
+            std::lock_guard lock(state.mutex);
+            if (!state.settings.dump || !state.dumped.insert(hash).second) {
+                return;
+            }
+            if (IsSafeRelativeName(name)) {
+                path = state.settings.folder / L"Dump" / std::filesystem::path(std::string(name) + ".png");
+            }
+            else {
+                const std::string formatName(Name(format));
+                path = state.settings.folder / L"Dump" /
+                       std::format(L"{}_{}x{}_{}.png", HashName(hash), image.width, image.height,
+                                   std::wstring(formatName.begin(), formatName.end()));
+            }
+        }
+        std::error_code error;
+        if (std::filesystem::exists(path, error)) {
             return;
         }
-        if (!name.empty()) {
-            path = state.settings.folder / L"Dump" / std::filesystem::path(std::string(name) + ".png");
-        }
-        else {
-            const std::string formatName(Name(format));
-            path = state.settings.folder / L"Dump" /
-                   std::format(L"{}_{}x{}_{}.png", HashName(hash), image.width, image.height,
-                               std::wstring(formatName.begin(), formatName.end()));
+        std::filesystem::create_directories(path.parent_path(), error);
+        if (!bw::WritePng(path, image)) {
+            log::Warning("Textures: cannot write {}", log::PathText(path));
         }
     }
-    std::error_code error;
-    if (std::filesystem::exists(path, error)) {
-        return;
-    }
-    std::filesystem::create_directories(path.parent_path(), error);
-    if (!WritePng(path, image)) {
-        log::Warning("Textures: cannot write {}", path.string());
+    catch (const std::exception&) {
+        log::Warning("Textures: a dump failed");
     }
 }
 
@@ -303,19 +274,24 @@ std::filesystem::path FindReplacement(std::uint64_t hash, std::string_view name)
 {
     State& state = GetState();
     std::lock_guard lock(state.mutex);
-    if (!name.empty()) {
-        if (const auto it = state.replacementsByName.find(std::string(name)); it != state.replacementsByName.end()) {
-            return it->second;
+    try {
+        if (!name.empty()) {
+            if (const auto it = state.replacementsByName.find(std::string(name)); it != state.replacementsByName.end()) {
+                return it->second;
+            }
         }
+        const auto it = state.replacementsByHash.find(hash);
+        return it != state.replacementsByHash.end() ? it->second : std::filesystem::path();
     }
-    const auto it = state.replacementsByHash.find(hash);
-    return it != state.replacementsByHash.end() ? it->second : std::filesystem::path();
+    catch (const std::bad_alloc&) {
+        return {};
+    }
 }
 
 bool LoadImage(const std::filesystem::path& path, Image& image) noexcept
 {
-    if (!ReadImage(path, image)) {
-        log::Warning("Textures: cannot read {}", path.string());
+    if (!bw::ReadBitmap(path, image)) {
+        log::Warning("Textures: cannot read {}", log::PathText(path));
         return false;
     }
     return true;

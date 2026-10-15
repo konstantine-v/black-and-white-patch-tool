@@ -6,11 +6,30 @@
 
 namespace bw::image {
 
-std::optional<Section> FindSection(HMODULE module, std::string_view name) noexcept
+const IMAGE_NT_HEADERS32* NtHeaders(HMODULE module) noexcept
 {
+    if (module == nullptr) {
+        return nullptr;
+    }
     const auto base = reinterpret_cast<Address>(module);
     const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(module);
-    const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + static_cast<Address>(dos->e_lfanew));
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE || dos->e_lfanew <= 0) {
+        return nullptr;
+    }
+    const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS32*>(base + static_cast<Address>(dos->e_lfanew));
+    if (nt->Signature != IMAGE_NT_SIGNATURE || nt->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR32_MAGIC) {
+        return nullptr;
+    }
+    return nt;
+}
+
+std::optional<Section> FindSection(HMODULE module, std::string_view name) noexcept
+{
+    const IMAGE_NT_HEADERS32* nt = NtHeaders(module);
+    if (nt == nullptr) {
+        return std::nullopt;
+    }
+    const auto base = reinterpret_cast<Address>(module);
     const IMAGE_SECTION_HEADER* sections = IMAGE_FIRST_SECTION(nt);
     for (WORD i = 0; i < nt->FileHeader.NumberOfSections; ++i) {
         const IMAGE_SECTION_HEADER& section = sections[i];

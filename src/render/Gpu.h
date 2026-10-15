@@ -8,10 +8,20 @@
 #include "core/Windows.h"
 #include "render/Format.h"
 
+#include <wrl/client.h>
+
 #include <cstdint>
 #include <memory>
 
+// Direct3D 9 interfaces by name only: d3d9.h cannot be included next to ddraw.h, but the objects below hold them
+// with their real types.
+struct IDirect3DTexture9;
+struct IDirect3DSurface9;
+
 namespace bw::render::gpu {
+
+template <typename T>
+using ComPtr = Microsoft::WRL::ComPtr<T>;
 
 /// Settings for the device; from BWDecomp.ini [Display].
 struct Options {
@@ -63,29 +73,26 @@ public:
     /// Uploads CPU changes to the GPU copy; done automatically before drawing.
     void Upload() noexcept;
     [[nodiscard]] std::uint32_t Levels() const noexcept { return m_levels; }
-    /// The IDirect3DTexture9 to draw with: a texture pack's replacement, the full-precision copy, or the plain copy.
-    [[nodiscard]] void* Native() const noexcept
+    /// The texture to draw with: a texture pack's replacement, the full-precision copy, or the plain copy.
+    [[nodiscard]] IDirect3DTexture9* Native() const noexcept
     {
-        return m_replacement != nullptr ? m_replacement : (m_full != nullptr ? m_full : m_gpu);
+        return m_replacement ? m_replacement.Get() : (m_full ? m_full.Get() : m_gpu.Get());
     }
 
 private:
-    Texture(void* system, void* gpu, std::uint32_t width, std::uint32_t height, std::uint32_t levels,
-            Format format) noexcept
-        : m_system(system), m_gpu(gpu), m_width(width), m_height(height), m_levels(levels), m_format(format)
-    {
-    }
+    Texture(ComPtr<IDirect3DTexture9> system, ComPtr<IDirect3DTexture9> gpu, std::uint32_t width, std::uint32_t height,
+            std::uint32_t levels, Format format) noexcept;
     bool MakeFullPrecision() noexcept;
     void ConvertToFullPrecision(std::uint32_t level) noexcept;
     /// Hashes the top level after the game changed it; dumps it and finds its replacement (render/TexturePack.h).
     void Identify() noexcept;
 
-    void* m_system;                // IDirect3DTexture9*, D3DPOOL_SYSTEMMEM, the game's format
-    void* m_gpu;                   // IDirect3DTexture9*, D3DPOOL_DEFAULT, the game's format; released at full precision
-    void* m_fullSystem = nullptr;  // IDirect3DTexture9*, D3DPOOL_SYSTEMMEM, A8R8G8B8 (full precision only)
-    void* m_full = nullptr;        // IDirect3DTexture9*, D3DPOOL_DEFAULT, A8R8G8B8 (full precision only)
-    void* m_replacement = nullptr; // IDirect3DTexture9*, a texture pack's image (shared, one reference held)
-    std::uint64_t m_hash = 0;      // of the top level, when texture packs are active
+    ComPtr<IDirect3DTexture9> m_system;       // D3DPOOL_SYSTEMMEM, the game's format
+    ComPtr<IDirect3DTexture9> m_gpu;          // D3DPOOL_DEFAULT, the game's format; released at full precision
+    ComPtr<IDirect3DTexture9> m_fullSystem;   // D3DPOOL_SYSTEMMEM, A8R8G8B8 (full precision only)
+    ComPtr<IDirect3DTexture9> m_full;         // D3DPOOL_DEFAULT, A8R8G8B8 (full precision only)
+    ComPtr<IDirect3DTexture9> m_replacement;  // a texture pack's image, shared with other textures
+    std::uint64_t m_hash = 0;                 // of the top level, when texture packs are active
     std::uint64_t m_lastChange = 0;  // GetTickCount64 of the last top-level change seen by Upload
     std::uint32_t m_width;
     std::uint32_t m_height;
@@ -121,26 +128,23 @@ public:
     [[nodiscard]] Format GetFormat() const noexcept { return m_format; }
     [[nodiscard]] bool Multisampled() const noexcept { return m_multisampled != nullptr; }
 
-    /// The single-sampled surface with the latest pixels (IDirect3DSurface9*), for reading and copying from.
-    [[nodiscard]] void* Resolved() noexcept;
-    /// The single-sampled surface, about to be changed by a copy or the CPU (IDirect3DSurface9*).
-    [[nodiscard]] void* ForWriting() noexcept;
-    /// The surface draws go to (IDirect3DSurface9*), up to date; marks it as about to be drawn into.
-    [[nodiscard]] void* ForDrawing() noexcept;
+    /// The single-sampled surface with the latest pixels, for reading and copying from.
+    [[nodiscard]] IDirect3DSurface9* Resolved() noexcept;
+    /// The single-sampled surface, about to be changed by a copy or the CPU.
+    [[nodiscard]] IDirect3DSurface9* ForWriting() noexcept;
+    /// The surface draws go to, up to date; marks it as about to be drawn into.
+    [[nodiscard]] IDirect3DSurface9* ForDrawing() noexcept;
 
 private:
     /// Which copy holds the latest pixels (multisampled targets).
     enum class Newest : std::uint8_t { Both, Single, Multisampled };
 
-    RenderTarget(void* surface, void* texture, void* multisampled, std::uint32_t width, std::uint32_t height,
-                 Format format) noexcept
-        : m_surface(surface), m_texture(texture), m_multisampled(multisampled), m_width(width), m_height(height),
-          m_format(format)
-    {
-    }
-    void* m_surface;       // IDirect3DSurface9*, single-sampled
-    void* m_texture;       // IDirect3DTexture9* owning m_surface when multisampled (to draw it back), else null
-    void* m_multisampled;  // IDirect3DSurface9*, multisampled, or null
+    RenderTarget(ComPtr<IDirect3DSurface9> surface, ComPtr<IDirect3DTexture9> texture,
+                 ComPtr<IDirect3DSurface9> multisampled, std::uint32_t width, std::uint32_t height,
+                 Format format) noexcept;
+    ComPtr<IDirect3DSurface9> m_surface;       // single-sampled
+    ComPtr<IDirect3DTexture9> m_texture;       // owns m_surface when multisampled (to draw it back), else null
+    ComPtr<IDirect3DSurface9> m_multisampled;  // or null
     std::uint32_t m_width;
     std::uint32_t m_height;
     Format m_format;
@@ -156,7 +160,7 @@ public:
     ~DepthBuffer();
     DepthBuffer(const DepthBuffer&) = delete;
     DepthBuffer& operator=(const DepthBuffer&) = delete;
-    [[nodiscard]] void* Native() const noexcept { return m_surface; }
+    [[nodiscard]] IDirect3DSurface9* Native() const noexcept { return m_surface.Get(); }
 
     /// Reads depth values (0..1) of `rect` into `values` (row by row, rect width per row). False when this depth
     /// buffer cannot be read.
@@ -164,8 +168,8 @@ public:
     [[nodiscard]] bool Readable() const noexcept { return m_readable; }
 
 private:
-    DepthBuffer(void* surface, bool readable) noexcept : m_surface(surface), m_readable(readable) {}
-    void* m_surface;  // IDirect3DSurface9*
+    DepthBuffer(ComPtr<IDirect3DSurface9> surface, bool readable) noexcept;
+    ComPtr<IDirect3DSurface9> m_surface;
     bool m_readable;
 };
 

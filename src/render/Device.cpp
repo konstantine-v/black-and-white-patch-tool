@@ -10,8 +10,6 @@
 
 #include <bit>
 #include <format>
-#include <filesystem>
-#include <fstream>
 #include <set>
 #include <new>
 #include <variant>
@@ -79,47 +77,6 @@ D3DMATRIX Multiply(const D3DMATRIX& a, const D3DMATRIX& b) noexcept
         }
     }
     return result;
-}
-
-/// Debugging aid (BW_DUMP_TEXTURES with [Log] Debug=1): saves the first textures bound as PNG files.
-void DumpTexture(Surface& surface) noexcept
-{
-    static std::set<const Surface*> dumped;
-    if (dumped.size() >= 60 || !dumped.insert(&surface).second || IsBlockCompressed(surface.PixelFormat())) {
-        return;
-    }
-    DDSURFACEDESC2 desc{};
-    desc.dwSize = sizeof desc;
-    if (const HRESULT result = surface.Lock(nullptr, &desc, DDLOCK_READONLY, nullptr); FAILED(result)) {
-        log::Debug("Renderer: cannot dump a texture (0x{:08x})", static_cast<std::uint32_t>(result));
-        return;
-    }
-    const std::uint32_t width = surface.Width();
-    const std::uint32_t height = surface.Height();
-    std::vector<std::uint8_t> rgb(std::size_t{width} * height * 3);
-    const std::uint32_t step = BytesPerPixel(surface.PixelFormat());
-    for (std::uint32_t y = 0; y < height; ++y) {
-        for (std::uint32_t x = 0; x < width; ++x) {
-            const std::uint32_t argb = ReadArgb(
-                surface.PixelFormat(), static_cast<const std::uint8_t*>(desc.lpSurface) + std::size_t{y} * desc.lPitch + x * step);
-            std::uint8_t* out = &rgb[(std::size_t{y} * width + x) * 3];
-            out[0] = static_cast<std::uint8_t>(argb >> 16);
-            out[1] = static_cast<std::uint8_t>(argb >> 8);
-            out[2] = static_cast<std::uint8_t>(argb);
-        }
-    }
-    surface.Unlock(nullptr);
-    const std::vector<std::uint8_t> png = diagnostics::EncodePng(width, height, rgb);
-    wchar_t exe[MAX_PATH]{};
-    GetModuleFileNameW(nullptr, exe, MAX_PATH);
-    const std::filesystem::path folder = std::filesystem::path(exe).parent_path() / L"Screenshots";
-    std::error_code error;
-    std::filesystem::create_directories(folder, error);
-    const std::filesystem::path name =
-        folder / std::format("texture_{:03}_{}_{:08x}.png", dumped.size(), Name(surface.PixelFormat()),
-                             surface.Description().ddsCaps.dwCaps);
-    std::ofstream(name, std::ios::binary).write(reinterpret_cast<const char*>(png.data()), static_cast<std::streamsize>(png.size()));
-    log::Debug("Renderer: dumped {}", name.string());
 }
 
 }  // namespace
@@ -418,15 +375,17 @@ void Device::ApplyRenderState(DWORD state, DWORD value) noexcept
 
 HRESULT Device::SetRenderState(D3DRENDERSTATETYPE state, DWORD value)
 {
-    if (static_cast<std::size_t>(state) >= kRenderStates) {
-        return DDERR_INVALIDPARAMS;
-    }
-    if (m_recording != nullptr) {
-        m_recording->entries.emplace_back(StateBlock::RenderState{static_cast<DWORD>(state), value});
+    return Guarded([&]() -> HRESULT {
+        if (static_cast<std::size_t>(state) >= kRenderStates) {
+            return DDERR_INVALIDPARAMS;
+        }
+        if (m_recording != nullptr) {
+            m_recording->entries.emplace_back(StateBlock::RenderState{static_cast<DWORD>(state), value});
+            return D3D_OK;
+        }
+        ApplyRenderState(state, value);
         return D3D_OK;
-    }
-    ApplyRenderState(state, value);
-    return D3D_OK;
+    });
 }
 
 HRESULT Device::GetRenderState(D3DRENDERSTATETYPE state, LPDWORD value)
@@ -453,15 +412,17 @@ void Device::ApplyStageState(DWORD stage, DWORD type, DWORD value) noexcept
 
 HRESULT Device::SetTextureStageState(DWORD stage, D3DTEXTURESTAGESTATETYPE type, DWORD value)
 {
-    if (stage >= kStages || static_cast<std::size_t>(type) >= kStageStates) {
-        return DDERR_INVALIDPARAMS;
-    }
-    if (m_recording != nullptr) {
-        m_recording->entries.emplace_back(StateBlock::StageState{stage, static_cast<DWORD>(type), value});
+    return Guarded([&]() -> HRESULT {
+        if (stage >= kStages || static_cast<std::size_t>(type) >= kStageStates) {
+            return DDERR_INVALIDPARAMS;
+        }
+        if (m_recording != nullptr) {
+            m_recording->entries.emplace_back(StateBlock::StageState{stage, static_cast<DWORD>(type), value});
+            return D3D_OK;
+        }
+        ApplyStageState(stage, type, value);
         return D3D_OK;
-    }
-    ApplyStageState(stage, type, value);
-    return D3D_OK;
+    });
 }
 
 HRESULT Device::GetTextureStageState(DWORD stage, D3DTEXTURESTAGESTATETYPE type, LPDWORD value)
@@ -475,44 +436,43 @@ HRESULT Device::GetTextureStageState(DWORD stage, D3DTEXTURESTAGESTATETYPE type,
 
 HRESULT Device::SetTexture(DWORD stage, LPDIRECTDRAWSURFACE7 texture)
 {
-    if (stage >= kStages) {
-        return DDERR_INVALIDPARAMS;
-    }
-    Surface* surface = Surface::From(texture);
-    if (m_recording != nullptr) {
-        m_recording->entries.emplace_back(StateBlock::Texture{stage, surface});
-        return D3D_OK;
-    }
-    if (surface != nullptr && surface->Role() != SurfaceRole::Texture) {
-        static bool logged = false;
-        if (!logged) {
-            logged = true;
-            log::Warning("Renderer: SetTexture with a surface that is not a texture (render-to-texture)");
+    return Guarded([&]() -> HRESULT {
+        if (stage >= kStages) {
+            return DDERR_INVALIDPARAMS;
         }
-        surface = nullptr;
-    }
-    if (surface == m_textures[stage]) {
-        return D3D_OK;
-    }
-    if (surface != nullptr && log::DebugEnabled() && GetEnvironmentVariableW(L"BW_DUMP_TEXTURES", nullptr, 0) != 0) {
-        DumpTexture(*surface);
-    }
-    if (surface != nullptr && log::DebugEnabled()) {
-        static std::set<std::pair<DWORD, int>> seen;
-        if (seen.insert({surface->Description().ddsCaps.dwCaps, static_cast<int>(surface->PixelFormat())}).second) {
-            log::Debug("Renderer: texture bound: {} caps 0x{:08x}", Name(surface->PixelFormat()),
-                       surface->Description().ddsCaps.dwCaps);
+        Surface* surface = Surface::From(texture);
+        if (m_recording != nullptr) {
+            m_recording->entries.emplace_back(StateBlock::Texture{stage, surface});
+            return D3D_OK;
         }
-    }
-    if (surface != nullptr) {
-        surface->AddRef();
-    }
-    if (m_textures[stage] != nullptr) {
-        m_textures[stage]->Release();
-    }
-    m_textures[stage] = surface;
-    gpu::SetTexture(stage, surface != nullptr ? surface->GpuTexture() : nullptr);
-    return D3D_OK;
+        if (surface != nullptr && surface->Role() != SurfaceRole::Texture) {
+            static bool logged = false;
+            if (!logged) {
+                logged = true;
+                log::Warning("Renderer: SetTexture with a surface that is not a texture (render-to-texture)");
+            }
+            surface = nullptr;
+        }
+        if (surface == m_textures[stage]) {
+            return D3D_OK;
+        }
+        if (surface != nullptr && log::DebugEnabled()) {
+            static std::set<std::pair<DWORD, int>> seen;
+            if (seen.insert({surface->Description().ddsCaps.dwCaps, static_cast<int>(surface->PixelFormat())}).second) {
+                log::Debug("Renderer: texture bound: {} caps 0x{:08x}", Name(surface->PixelFormat()),
+                           surface->Description().ddsCaps.dwCaps);
+            }
+        }
+        if (surface != nullptr) {
+            surface->AddRef();
+        }
+        if (m_textures[stage] != nullptr) {
+            m_textures[stage]->Release();
+        }
+        m_textures[stage] = surface;
+        gpu::SetTexture(stage, surface != nullptr ? surface->GpuTexture() : nullptr);
+        return D3D_OK;
+    });
 }
 
 HRESULT Device::GetTexture(DWORD stage, LPDIRECTDRAWSURFACE7* out)
@@ -529,18 +489,20 @@ HRESULT Device::GetTexture(DWORD stage, LPDIRECTDRAWSURFACE7* out)
 
 HRESULT Device::SetTransform(D3DTRANSFORMSTATETYPE type, LPD3DMATRIX matrix)
 {
-    if (matrix == nullptr) {
-        return DDERR_INVALIDPARAMS;
-    }
-    if (m_recording != nullptr) {
-        m_recording->entries.emplace_back(StateBlock::Transform{static_cast<DWORD>(type), *matrix});
+    return Guarded([&]() -> HRESULT {
+        if (matrix == nullptr) {
+            return DDERR_INVALIDPARAMS;
+        }
+        if (m_recording != nullptr) {
+            m_recording->entries.emplace_back(StateBlock::Transform{static_cast<DWORD>(type), *matrix});
+            return D3D_OK;
+        }
+        m_transforms[type] = *matrix;
+        if (const std::uint32_t native = TranslateTransform(type); native != 0) {
+            gpu::SetTransform(native, &matrix->_11);
+        }
         return D3D_OK;
-    }
-    m_transforms[type] = *matrix;
-    if (const std::uint32_t native = TranslateTransform(type); native != 0) {
-        gpu::SetTransform(native, &matrix->_11);
-    }
-    return D3D_OK;
+    });
 }
 
 HRESULT Device::GetTransform(D3DTRANSFORMSTATETYPE type, LPD3DMATRIX matrix)
@@ -566,16 +528,18 @@ HRESULT Device::MultiplyTransform(D3DTRANSFORMSTATETYPE type, LPD3DMATRIX matrix
 
 HRESULT Device::SetViewport(LPD3DVIEWPORT7 viewport)
 {
-    if (viewport == nullptr) {
-        return DDERR_INVALIDPARAMS;
-    }
-    if (m_recording != nullptr) {
-        m_recording->entries.emplace_back(StateBlock::Viewport{*viewport});
+    return Guarded([&]() -> HRESULT {
+        if (viewport == nullptr) {
+            return DDERR_INVALIDPARAMS;
+        }
+        if (m_recording != nullptr) {
+            m_recording->entries.emplace_back(StateBlock::Viewport{*viewport});
+            return D3D_OK;
+        }
+        m_viewport = *viewport;
+        gpu::SetViewport(viewport);
         return D3D_OK;
-    }
-    m_viewport = *viewport;
-    gpu::SetViewport(viewport);
-    return D3D_OK;
+    });
 }
 
 HRESULT Device::GetViewport(LPD3DVIEWPORT7 viewport)
@@ -589,16 +553,18 @@ HRESULT Device::GetViewport(LPD3DVIEWPORT7 viewport)
 
 HRESULT Device::SetMaterial(LPD3DMATERIAL7 material)
 {
-    if (material == nullptr) {
-        return DDERR_INVALIDPARAMS;
-    }
-    if (m_recording != nullptr) {
-        m_recording->entries.emplace_back(StateBlock::Material{*material});
+    return Guarded([&]() -> HRESULT {
+        if (material == nullptr) {
+            return DDERR_INVALIDPARAMS;
+        }
+        if (m_recording != nullptr) {
+            m_recording->entries.emplace_back(StateBlock::Material{*material});
+            return D3D_OK;
+        }
+        m_material = *material;
+        gpu::SetMaterial(material);
         return D3D_OK;
-    }
-    m_material = *material;
-    gpu::SetMaterial(material);
-    return D3D_OK;
+    });
 }
 
 HRESULT Device::GetMaterial(LPD3DMATERIAL7 material)
@@ -612,23 +578,25 @@ HRESULT Device::GetMaterial(LPD3DMATERIAL7 material)
 
 HRESULT Device::SetLight(DWORD index, LPD3DLIGHT7 light)
 {
-    if (light == nullptr) {
-        return DDERR_INVALIDPARAMS;
-    }
-    if (m_recording != nullptr) {
-        m_recording->entries.emplace_back(StateBlock::Light{index, *light});
-        return D3D_OK;
-    }
-    m_lights[index] = *light;
-    if (!gpu::SetLight(index, light)) {
-        static bool logged = false;
-        if (!logged) {
-            logged = true;
-            log::Info("Renderer: Direct3D 9 rejected light {} (type {}, range {})", index,
-                      static_cast<int>(light->dltType), light->dvRange);
+    return Guarded([&]() -> HRESULT {
+        if (light == nullptr) {
+            return DDERR_INVALIDPARAMS;
         }
-    }
-    return D3D_OK;
+        if (m_recording != nullptr) {
+            m_recording->entries.emplace_back(StateBlock::Light{index, *light});
+            return D3D_OK;
+        }
+        m_lights[index] = *light;
+        if (!gpu::SetLight(index, light)) {
+            static bool logged = false;
+            if (!logged) {
+                logged = true;
+                log::Info("Renderer: Direct3D 9 rejected light {} (type {}, range {})", index,
+                          static_cast<int>(light->dltType), light->dvRange);
+            }
+        }
+        return D3D_OK;
+    });
 }
 
 HRESULT Device::GetLight(DWORD index, LPD3DLIGHT7 light)
@@ -643,13 +611,15 @@ HRESULT Device::GetLight(DWORD index, LPD3DLIGHT7 light)
 
 HRESULT Device::LightEnable(DWORD index, BOOL enable)
 {
-    if (m_recording != nullptr) {
-        m_recording->entries.emplace_back(StateBlock::LightEnable{index, enable});
+    return Guarded([&]() -> HRESULT {
+        if (m_recording != nullptr) {
+            m_recording->entries.emplace_back(StateBlock::LightEnable{index, enable});
+            return D3D_OK;
+        }
+        m_lightEnabled[index] = enable;
+        gpu::LightEnable(index, enable != FALSE);
         return D3D_OK;
-    }
-    m_lightEnabled[index] = enable;
-    gpu::LightEnable(index, enable != FALSE);
-    return D3D_OK;
+    });
 }
 
 HRESULT Device::GetLightEnable(DWORD index, BOOL* enable)
@@ -709,12 +679,14 @@ HRESULT Device::DrawIndexedPrimitive(D3DPRIMITIVETYPE type, DWORD fvf, LPVOID ve
 
 HRESULT Device::BeginStateBlock()
 {
-    if (m_recording != nullptr) {
-        return D3DERR_INBEGINSTATEBLOCK;
-    }
-    m_stateBlocks.push_back(std::make_unique<StateBlock>());
-    m_recording = m_stateBlocks.back().get();
-    return D3D_OK;
+    return Guarded([&]() -> HRESULT {
+        if (m_recording != nullptr) {
+            return D3DERR_INBEGINSTATEBLOCK;
+        }
+        m_stateBlocks.push_back(std::make_unique<StateBlock>());
+        m_recording = m_stateBlocks.back().get();
+        return D3D_OK;
+    });
 }
 
 HRESULT Device::EndStateBlock(LPDWORD handle)
@@ -819,42 +791,44 @@ HRESULT Device::DeleteStateBlock(DWORD handle)
 
 HRESULT Device::CreateStateBlock(D3DSTATEBLOCKTYPE type, LPDWORD handle)
 {
-    if (handle == nullptr) {
-        return DDERR_INVALIDPARAMS;
-    }
-    if (type != D3DSBT_ALL) {
-        static bool logged = false;
-        if (!logged) {
-            logged = true;
-            log::Info("Renderer: pixel/vertex state blocks capture all states");
+    return Guarded([&]() -> HRESULT {
+        if (handle == nullptr) {
+            return DDERR_INVALIDPARAMS;
         }
-    }
-    auto block = std::make_unique<StateBlock>();
-    for (DWORD state = 1; state < kRenderStates; ++state) {
-        if (!IsRetiredRenderState(state)) {
-            block->entries.emplace_back(StateBlock::RenderState{state, m_renderStates[state]});
+        if (type != D3DSBT_ALL) {
+            static bool logged = false;
+            if (!logged) {
+                logged = true;
+                log::Info("Renderer: pixel/vertex state blocks capture all states");
+            }
         }
-    }
-    for (DWORD stage = 0; stage < kStages; ++stage) {
-        for (DWORD stageType = D3DTSS_COLOROP; stageType <= D3DTSS_TEXTURETRANSFORMFLAGS; ++stageType) {
-            block->entries.emplace_back(StateBlock::StageState{stage, stageType, m_stageStates[stage][stageType]});
+        auto block = std::make_unique<StateBlock>();
+        for (DWORD state = 1; state < kRenderStates; ++state) {
+            if (!IsRetiredRenderState(state)) {
+                block->entries.emplace_back(StateBlock::RenderState{state, m_renderStates[state]});
+            }
         }
-        block->entries.emplace_back(StateBlock::Texture{stage, m_textures[stage]});
-    }
-    for (const auto& [transform, matrix] : m_transforms) {
-        block->entries.emplace_back(StateBlock::Transform{transform, matrix});
-    }
-    block->entries.emplace_back(StateBlock::Viewport{m_viewport});
-    block->entries.emplace_back(StateBlock::Material{m_material});
-    for (const auto& [index, light] : m_lights) {
-        block->entries.emplace_back(StateBlock::Light{index, light});
-    }
-    for (const auto& [index, enable] : m_lightEnabled) {
-        block->entries.emplace_back(StateBlock::LightEnable{index, enable});
-    }
-    m_stateBlocks.push_back(std::move(block));
-    *handle = static_cast<DWORD>(m_stateBlocks.size());
-    return D3D_OK;
+        for (DWORD stage = 0; stage < kStages; ++stage) {
+            for (DWORD stageType = D3DTSS_COLOROP; stageType <= D3DTSS_TEXTURETRANSFORMFLAGS; ++stageType) {
+                block->entries.emplace_back(StateBlock::StageState{stage, stageType, m_stageStates[stage][stageType]});
+            }
+            block->entries.emplace_back(StateBlock::Texture{stage, m_textures[stage]});
+        }
+        for (const auto& [transform, matrix] : m_transforms) {
+            block->entries.emplace_back(StateBlock::Transform{transform, matrix});
+        }
+        block->entries.emplace_back(StateBlock::Viewport{m_viewport});
+        block->entries.emplace_back(StateBlock::Material{m_material});
+        for (const auto& [index, light] : m_lights) {
+            block->entries.emplace_back(StateBlock::Light{index, light});
+        }
+        for (const auto& [index, enable] : m_lightEnabled) {
+            block->entries.emplace_back(StateBlock::LightEnable{index, enable});
+        }
+        m_stateBlocks.push_back(std::move(block));
+        *handle = static_cast<DWORD>(m_stateBlocks.size());
+        return D3D_OK;
+    });
 }
 
 }  // namespace bw::render

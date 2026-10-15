@@ -4,14 +4,16 @@
 //
 // Without --game it starts the runblack.exe next to itself. The game's files are never modified.
 
+#include "core/CommandLine.h"
+#include "core/Handle.h"
 #include "core/Image.h"
+#include "core/Module.h"
 #include "core/Windows.h"
 
 #include <shellapi.h>
 
 #include <filesystem>
 #include <fstream>
-#include <iterator>
 #include <optional>
 #include <span>
 #include <string>
@@ -38,20 +40,19 @@ std::wstring LastErrorText()
     return L" (Windows error " + std::to_wstring(GetLastError()) + L")";
 }
 
-std::filesystem::path ExecutableDirectory()
-{
-    std::wstring path(MAX_PATH, L'\0');
-    path.resize(GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size())));
-    return std::filesystem::path(path).parent_path();
-}
-
 std::optional<std::string> FileSha256(const std::filesystem::path& file)
 {
-    std::ifstream stream(file, std::ios::binary);
-    if (!stream) {
+    std::error_code error;
+    const std::uintmax_t size = std::filesystem::file_size(file, error);
+    constexpr std::uintmax_t kLargestExecutable = 64u << 20;  // runblack.exe is 8 MB
+    if (error || size > kLargestExecutable) {
         return std::nullopt;
     }
-    const std::vector<char> bytes{std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
+    std::vector<char> bytes(static_cast<std::size_t>(size));
+    std::ifstream stream(file, std::ios::binary);
+    if (!stream.read(bytes.data(), static_cast<std::streamsize>(bytes.size()))) {
+        return std::nullopt;
+    }
     const auto digest = bw::image::ComputeSha256(std::as_bytes(std::span(bytes)));
     if (!digest) {
         return std::nullopt;
@@ -91,6 +92,9 @@ Options ParseCommandLine(const std::filesystem::path& launcherDirectory)
     Options options{launcherDirectory / L"runblack.exe", {}};
     int count = 0;
     LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &count);
+    if (arguments == nullptr) {
+        return options;
+    }
     for (int i = 1; i < count; ++i) {
         const std::wstring_view argument = arguments[i];
         if (argument == L"--game" && i + 1 < count) {
@@ -98,9 +102,8 @@ Options ParseCommandLine(const std::filesystem::path& launcherDirectory)
         }
         else if (argument == L"--") {
             for (++i; i < count; ++i) {
-                options.gameArguments += L" \"";
-                options.gameArguments += arguments[i];
-                options.gameArguments += L'"';
+                options.gameArguments += L' ';
+                options.gameArguments += bw::QuoteArgument(arguments[i]);
             }
         }
     }
@@ -115,24 +118,38 @@ bool InjectLibrary(HANDLE process, const std::filesystem::path& dll, std::wstrin
     const std::wstring path = dll.wstring();
     const SIZE_T size = (path.size() + 1) * sizeof(wchar_t);
     void* remotePath = VirtualAllocEx(process, nullptr, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-    if (remotePath == nullptr || !WriteProcessMemory(process, remotePath, path.c_str(), size, nullptr)) {
+    if (remotePath == nullptr) {
+        error = L"Cannot allocate memory in the game process" + LastErrorText();
+        return false;
+    }
+    struct RemoteFree {
+        HANDLE process;
+        void* memory;
+        ~RemoteFree() { VirtualFreeEx(process, memory, 0, MEM_RELEASE); }
+    } const freeRemotePath{process, remotePath};
+    if (!WriteProcessMemory(process, remotePath, path.c_str(), size, nullptr)) {
         error = L"Cannot write into the game process" + LastErrorText();
         return false;
     }
 
+    // kernel32 is mapped at the same address in every process of a session, so the launcher's LoadLibraryW is the
+    // game's (both are 32-bit, see the static_assert above).
     const auto loadLibrary = reinterpret_cast<LPTHREAD_START_ROUTINE>(
         GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "LoadLibraryW"));
-    HANDLE thread = CreateRemoteThread(process, nullptr, 0, loadLibrary, remotePath, 0, nullptr);
-    if (thread == nullptr) {
-        error = L"Cannot start the loader thread" + LastErrorText();
-        VirtualFreeEx(process, remotePath, 0, MEM_RELEASE);
+    if (loadLibrary == nullptr) {
+        error = L"Cannot find LoadLibraryW" + LastErrorText();
         return false;
     }
-    WaitForSingleObject(thread, INFINITE);
+    const bw::UniqueHandle thread(CreateRemoteThread(process, nullptr, 0, loadLibrary, remotePath, 0, nullptr));
+    if (!thread) {
+        error = L"Cannot start the loader thread" + LastErrorText();
+        return false;
+    }
     DWORD module = 0;
-    GetExitCodeThread(thread, &module);
-    CloseHandle(thread);
-    VirtualFreeEx(process, remotePath, 0, MEM_RELEASE);
+    if (WaitForSingleObject(thread.Get(), INFINITE) != WAIT_OBJECT_0 || !GetExitCodeThread(thread.Get(), &module)) {
+        error = L"The loader thread failed" + LastErrorText();
+        return false;
+    }
 
     if (module == 0) {
         error = L"BWDecomp.dll refused to load into the game. See BWDecomp.log next to it for the reason.";
@@ -143,7 +160,7 @@ bool InjectLibrary(HANDLE process, const std::filesystem::path& dll, std::wstrin
 
 int Run()
 {
-    const std::filesystem::path launcherDirectory = ExecutableDirectory();
+    const std::filesystem::path launcherDirectory = bw::ModuleDirectory(nullptr);
     const Options options = ParseCommandLine(launcherDirectory);
     const std::filesystem::path dll = launcherDirectory / L"BWDecomp.dll";
 
@@ -161,29 +178,31 @@ int Run()
         return 1;
     }
 
-    std::wstring commandLine = L"\"" + options.game.wstring() + L"\"" + options.gameArguments;
+    std::wstring commandLine = bw::QuoteArgument(options.game.wstring()) + options.gameArguments;
     const std::wstring workingDirectory = options.game.parent_path().wstring();
     STARTUPINFOW startup{};
     startup.cb = sizeof startup;
-    PROCESS_INFORMATION process{};
+    PROCESS_INFORMATION started{};
     if (!CreateProcessW(options.game.c_str(), commandLine.data(), nullptr, nullptr, FALSE, CREATE_SUSPENDED, nullptr,
-                        workingDirectory.c_str(), &startup, &process)) {
+                        workingDirectory.c_str(), &startup, &started)) {
         ShowError(L"Cannot start " + options.game.wstring() + LastErrorText());
         return 1;
     }
+    const bw::UniqueHandle process(started.hProcess);
+    const bw::UniqueHandle mainThread(started.hThread);
 
     std::wstring error;
-    if (!InjectLibrary(process.hProcess, dll, error)) {
-        TerminateProcess(process.hProcess, 1);
-        CloseHandle(process.hThread);
-        CloseHandle(process.hProcess);
+    if (!InjectLibrary(process.Get(), dll, error)) {
+        TerminateProcess(process.Get(), 1);
         ShowError(error);
         return 1;
     }
-
-    ResumeThread(process.hThread);
-    CloseHandle(process.hThread);
-    CloseHandle(process.hProcess);
+    if (ResumeThread(mainThread.Get()) == static_cast<DWORD>(-1)) {
+        const std::wstring reason = LastErrorText();
+        TerminateProcess(process.Get(), 1);
+        ShowError(L"Cannot start the game's main thread" + reason);
+        return 1;
+    }
     return 0;
 }
 

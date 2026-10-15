@@ -66,13 +66,17 @@ std::vector<DisplayMode> AvailableModes(std::int32_t bitsPerPixel)
 
 std::vector<DisplayMode> RankFallbackModes(std::span<const DisplayMode> available, DisplayMode requested)
 {
+    if (requested.width <= 0 || requested.height <= 0) {
+        return {};
+    }
     const double requestedAspect = static_cast<double>(requested.width) / requested.height;
     auto sameAspect = [&](const DisplayMode& mode) {
         return std::abs(static_cast<double>(mode.width) / mode.height - requestedAspect) < 0.01;
     };
     std::vector<DisplayMode> ranked;
     for (const DisplayMode& mode : available) {
-        if (mode.Area() < requested.Area() && mode.width <= requested.width && mode.height <= requested.height) {
+        if (mode.width > 0 && mode.height > 0 && mode.Area() < requested.Area() && mode.width <= requested.width &&
+            mode.height <= requested.height) {
             ranked.push_back(mode);
         }
     }

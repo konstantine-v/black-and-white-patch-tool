@@ -34,11 +34,4 @@ struct PixelFormat {
 /// One channel scaled to 8 bits (a 5-bit 31 becomes 255).
 [[nodiscard]] std::uint8_t ExtractChannel(std::uint32_t pixel, std::uint32_t mask) noexcept;
 
-/// An RGB PNG (8 bits per channel, uncompressed deflate) of `rgb`, rows top to bottom, 3 bytes per pixel.
-[[nodiscard]] std::vector<std::uint8_t> EncodePng(std::uint32_t width, std::uint32_t height,
-                                                  std::span<const std::uint8_t> rgb);
-
-[[nodiscard]] std::uint32_t Crc32(std::span<const std::uint8_t> bytes, std::uint32_t crc = 0) noexcept;
-[[nodiscard]] std::uint32_t Adler32(std::span<const std::uint8_t> bytes) noexcept;
-
 }  // namespace bw::diagnostics

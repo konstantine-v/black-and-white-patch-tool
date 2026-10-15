@@ -5,6 +5,7 @@
 #include "core/Hook.h"
 #include "core/Image.h"
 #include "core/Log.h"
+#include "core/Module.h"
 #include "core/Version.h"
 #include "core/Windows.h"
 #include "diagnostics/Diagnostics.h"
@@ -16,32 +17,16 @@
 
 namespace {
 
-std::filesystem::path ModuleDirectory(HMODULE module)
-{
-    std::wstring path(MAX_PATH, L'\0');
-    for (;;) {
-        const DWORD length = GetModuleFileNameW(module, path.data(), static_cast<DWORD>(path.size()));
-        if (length < path.size()) {
-            path.resize(length);
-            break;
-        }
-        path.resize(path.size() * 2);
-    }
-    return std::filesystem::path(path).parent_path();
-}
-
 bool HostIsNamedRunblack(HMODULE game)
 {
-    std::wstring path(MAX_PATH, L'\0');
-    path.resize(GetModuleFileNameW(game, path.data(), static_cast<DWORD>(path.size())));
-    return _wcsicmp(std::filesystem::path(path).filename().c_str(), L"runblack.exe") == 0;
+    return _wcsicmp(bw::ModulePath(game).filename().c_str(), L"runblack.exe") == 0;
 }
 
 /// Returns false when the DLL must refuse to load (wrong game build or hooks rejected).
 bool Attach(HMODULE self)
 {
     const HMODULE game = GetModuleHandleW(nullptr);
-    const std::filesystem::path directory = ModuleDirectory(self);
+    const std::filesystem::path directory = bw::ModuleDirectory(self);
 
     bw::Config config = bw::Config::Load(directory / L"BWDecomp.ini");
     bw::log::Open(directory / L"BWDecomp.log", config.logDebug);
@@ -72,6 +57,9 @@ bool Attach(HMODULE self)
     bw::fixes::InstallAll(game, bw::GetConfig());
 
     const std::optional<bw::image::Section> text = bw::image::FindSection(game, ".text");
+    if (!text) {
+        return false;  // IsSupportedGame hashed .text, so this cannot happen
+    }
     const bw::HookInstallReport report =
         bw::HookRegistry::InstallAll(text->begin, text->end, bw::GetConfig().disabledHooks);
     bw::log::Info("Decompiled functions: {} active, {} disabled, {} rejected", report.installed, report.disabled,

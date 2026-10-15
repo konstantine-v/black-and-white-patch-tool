@@ -51,7 +51,8 @@ HRESULT DirectDraw::Create(GUID* guid, REFIID iid, void** out) noexcept
         return DDERR_OUTOFMEMORY;
     }
     if (const auto real = RealDirectDrawCreateEx()) {
-        if (FAILED(real(guid, reinterpret_cast<void**>(&directDraw->m_real), IID_IDirectDraw7, nullptr))) {
+        if (FAILED(real(guid, reinterpret_cast<void**>(directDraw->m_real.ReleaseAndGetAddressOf()), IID_IDirectDraw7,
+                        nullptr))) {
             directDraw->m_real = nullptr;
             log::Warning("Renderer: no DirectDraw for hardware queries");
         }
@@ -70,12 +71,7 @@ HRESULT DirectDraw::Create(GUID* guid, REFIID iid, void** out) noexcept
 
 DirectDraw::DirectDraw() noexcept = default;
 
-DirectDraw::~DirectDraw()
-{
-    if (m_real != nullptr) {
-        m_real->Release();
-    }
-}
+DirectDraw::~DirectDraw() = default;
 
 bool DirectDraw::EnsureGpu() noexcept
 {

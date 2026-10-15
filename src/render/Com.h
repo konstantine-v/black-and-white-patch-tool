@@ -9,6 +9,7 @@
 #include <d3d.h>
 
 #include <atomic>
+#include <new>
 
 namespace bw::render {
 
@@ -21,6 +22,22 @@ HRESULT Unsupported(const char* method, bool& logged) noexcept;
         static bool logged_ = false;                                                                               \
         return ::bw::render::Unsupported(__FUNCTION__, logged_);                                                   \
     }
+
+/// Runs the body of a COM method that allocates. The game calls these methods from its own (MSVC 6) code, which a C++
+/// exception must never unwind into: allocation failures become DDERR_OUTOFMEMORY, anything else DDERR_GENERIC.
+template <typename Body>
+[[nodiscard]] HRESULT Guarded(Body&& body) noexcept
+{
+    try {
+        return body();
+    }
+    catch (const std::bad_alloc&) {
+        return DDERR_OUTOFMEMORY;
+    }
+    catch (...) {
+        return DDERR_GENERIC;
+    }
+}
 
 /// Reference count shared by an object's interfaces (all versions of a COM object count together).
 class RefCount {

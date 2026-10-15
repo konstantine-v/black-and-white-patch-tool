@@ -2,15 +2,15 @@
 
 #include "core/Call.h"
 #include "core/Hook.h"
+#include "core/Text.h"
 #include "game/lh3dlib/LH3DRender.h"
 #include "render/Renderer.h"
 #include "render/TexturePack.h"
 
-#include <cstdio>
 #include <cstring>
 #include <format>
 #include <memory>
-#include <string>
+
 
 namespace lh3dlib {
 
@@ -107,12 +107,14 @@ void __cdecl LoadRawTexture(LockedImage16* image, const char* path, std::int32_t
             offset += rowSkip;
         }
 
-        // The alpha file: the same name with "a" before ".raw".
-        std::string alphaPath(path);
-        alphaPath.resize(alphaPath.size() >= 4 ? alphaPath.size() - 4 : 0);
-        alphaPath += "a.raw";
-        if (ReadFile(alphaPath.c_str(), g_textureFileBuffer, kAlphaBytes, &read) != 0) {
-            Trace("Can't load %s\n", alphaPath.c_str());
+        // The alpha file: the same name with "a" before ".raw" (built in a fixed buffer, as the original did).
+        char alphaPath[0x800];
+        bw::text::CopyInto(alphaPath, sizeof alphaPath, path);
+        const std::size_t length = strnlen(alphaPath, sizeof alphaPath);
+        alphaPath[length >= 4 ? length - 4 : 0] = '\0';
+        bw::text::AppendInto(alphaPath, sizeof alphaPath, "a.raw");
+        if (ReadFile(alphaPath, g_textureFileBuffer, kAlphaBytes, &read) != 0) {
+            Trace("Can't load %s\n", alphaPath);
         }
         step = half ? 2 : 1;
         rowSkip = half ? 0x100 : 0;
@@ -174,7 +176,7 @@ void LH3DTexture::LoadSegment() noexcept
     }
     char name[0x20]{};
     ReleasedSegment segment{};
-    std::snprintf(name, sizeof name, g_lowVideoMemory != 0 ? "LOW%x" : "%x", id);
+    bw::text::FormatInto(name, sizeof name, "{}{:x}", g_lowVideoMemory != 0 ? "LOW" : "", static_cast<std::uint32_t>(id));
     if (LoadReleasedSegment(&g_textureSegments, name, &segment, 1) == 2) {
         return;  // the original formats "Cannot load segment %s" into a buffer it never shows
     }

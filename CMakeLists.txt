@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(BlackWhiteDecomp VERSION 0.10.0 LANGUAGES CXX)
+project(BlackWhiteDecomp VERSION 0.10.1 LANGUAGES CXX)
 
 if(NOT MSVC OR NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
     message(FATAL_ERROR "Build with MSVC for 32-bit x86 (-A Win32): the code runs inside the 32-bit runblack.exe.")
@@ -23,13 +23,14 @@ configure_file(src/core/Version.h.in generated/core/Version.h @ONLY)
 
 # Infrastructure shared by the DLL, the launcher and the tests.
 add_library(bw_core STATIC
+    src/core/Bitmap.cpp
     src/core/Config.cpp
     src/core/GameHeap.cpp
     src/core/Hook.cpp
     src/core/Image.cpp
     src/core/Log.cpp
     src/core/Patch.cpp)
-target_link_libraries(bw_core PUBLIC bw_options bcrypt)
+target_link_libraries(bw_core PUBLIC bw_options bcrypt windowscodecs)
 
 # Decompiled game code and fixes. An OBJECT library so every translation unit (and its hook registrations) is linked
 # even though nothing references it by name.
@@ -57,7 +58,7 @@ add_library(bw_game OBJECT
     src/render/TexturePack.cpp
     src/render/Translate.cpp
     src/fixes/Fixes.cpp)
-target_link_libraries(bw_game PUBLIC bw_core ddraw dxguid d3d9 windowscodecs)
+target_link_libraries(bw_game PUBLIC bw_core ddraw dxguid d3d9)
 
 add_library(BWDecomp SHARED src/dll/DllMain.cpp)
 target_link_libraries(BWDecomp PRIVATE bw_game)

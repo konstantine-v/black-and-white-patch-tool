@@ -21,7 +21,6 @@ namespace bw::render::gpu {
 
 namespace {
 
-using Microsoft::WRL::ComPtr;
 
 constexpr std::uint32_t kStages = 8;
 constexpr std::uint64_t kAnimatedMilliseconds = 250;
@@ -48,7 +47,7 @@ struct Device {
     HWND swapWindow = nullptr;
 
     std::array<Texture*, kStages> bound{};
-    std::array<void*, kStages> boundNative{};  // the IDirect3DTexture9 set for each stage
+    std::array<IDirect3DTexture9*, kStages> boundNative{};  // what each stage was set to (not owned)
     RenderTarget* target = nullptr;
     DepthBuffer* depth = nullptr;
     bool lighting = true;
@@ -137,25 +136,6 @@ IDirect3DDevice9Ex* D() noexcept
     return g_device != nullptr ? g_device->device.Get() : nullptr;
 }
 
-IDirect3DSurface9* AsSurface(void* surface) noexcept
-{
-    return static_cast<IDirect3DSurface9*>(surface);
-}
-
-IDirect3DTexture9* AsTexture(void* texture) noexcept
-{
-    return static_cast<IDirect3DTexture9*>(texture);
-}
-
-template <typename T>
-void Release(void*& object) noexcept
-{
-    if (object != nullptr) {
-        static_cast<T*>(object)->Release();
-        object = nullptr;
-    }
-}
-
 /// Logs a failed call once per call site.
 #define BW_GPU_CHECK(expression)                                                                                    \
     [&] {                                                                                                          \
@@ -236,7 +216,7 @@ void UploadBound() noexcept
         // A texture that became full precision draws from a different Direct3D texture.
         if (texture->Native() != d.boundNative[stage]) {
             d.boundNative[stage] = texture->Native();
-            BW_GPU_CHECK(D()->SetTexture(stage, AsTexture(d.boundNative[stage])));
+            BW_GPU_CHECK(D()->SetTexture(stage, d.boundNative[stage]));
         }
     }
 }
@@ -444,23 +424,25 @@ std::unique_ptr<Texture> Texture::Create(std::uint32_t width, std::uint32_t heig
         return nullptr;
     }
     const D3DFORMAT native = ToD3D(format);
-    IDirect3DTexture9* system = nullptr;
-    IDirect3DTexture9* gpu = nullptr;
+    ComPtr<IDirect3DTexture9> system;
+    ComPtr<IDirect3DTexture9> gpu;
     if (FAILED(BW_GPU_CHECK(D()->CreateTexture(width, height, levels, 0, native, D3DPOOL_SYSTEMMEM, &system, nullptr)))) {
         log::Warning("Direct3D 9: cannot create a {}x{} {} texture", width, height, Name(format));
         return nullptr;
     }
     if (FAILED(BW_GPU_CHECK(D()->CreateTexture(width, height, levels, 0, native, D3DPOOL_DEFAULT, &gpu, nullptr)))) {
-        system->Release();
         return nullptr;
     }
-    std::unique_ptr<Texture> texture(new (std::nothrow)
-                                         Texture(system, gpu, width, height, system->GetLevelCount(), format));
-    if (!texture) {
-        system->Release();
-        gpu->Release();
-    }
-    return texture;
+    const std::uint32_t createdLevels = system->GetLevelCount();
+    return std::unique_ptr<Texture>(
+        new (std::nothrow) Texture(std::move(system), std::move(gpu), width, height, createdLevels, format));
+}
+
+Texture::Texture(ComPtr<IDirect3DTexture9> system, ComPtr<IDirect3DTexture9> gpu, std::uint32_t width,
+                 std::uint32_t height, std::uint32_t levels, Format format) noexcept
+    : m_system(std::move(system)), m_gpu(std::move(gpu)), m_width(width), m_height(height), m_levels(levels),
+      m_format(format)
+{
 }
 
 Texture::~Texture()
@@ -476,18 +458,13 @@ Texture::~Texture()
             }
         }
     }
-    Release<IDirect3DTexture9>(m_system);
-    Release<IDirect3DTexture9>(m_gpu);
-    Release<IDirect3DTexture9>(m_fullSystem);
-    Release<IDirect3DTexture9>(m_full);
-    Release<IDirect3DTexture9>(m_replacement);
 }
 
 bool Texture::Lock(std::uint32_t level, const RECT* rect, bool readOnly, LockedRect& out) noexcept
 {
     D3DLOCKED_RECT locked{};
     const DWORD flags = readOnly ? D3DLOCK_READONLY : 0;
-    if (FAILED(BW_GPU_CHECK(AsTexture(m_system)->LockRect(level, &locked, rect, flags)))) {
+    if (FAILED(BW_GPU_CHECK(m_system.Get()->LockRect(level, &locked, rect, flags)))) {
         return false;
     }
     out.bits = locked.pBits;
@@ -500,7 +477,7 @@ bool Texture::Lock(std::uint32_t level, const RECT* rect, bool readOnly, LockedR
 
 void Texture::Unlock(std::uint32_t level) noexcept
 {
-    AsTexture(m_system)->UnlockRect(level);
+    m_system.Get()->UnlockRect(level);
     if ((m_readOnlyLocks & (1u << level)) == 0) {
         m_dirtyLevels |= 1u << level;
         m_preciseLevels &= ~(1u << level);
@@ -516,20 +493,17 @@ bool Texture::MakeFullPrecision() noexcept
     if (!Ready() || !g_device->options.fullPrecisionTextures || !IsWidenable(m_format)) {
         return false;
     }
-    IDirect3DTexture9* system = nullptr;
-    IDirect3DTexture9* gpu = nullptr;
+    ComPtr<IDirect3DTexture9> system;
+    ComPtr<IDirect3DTexture9> gpu;
     if (FAILED(BW_GPU_CHECK(D()->CreateTexture(m_width, m_height, m_levels, 0, D3DFMT_A8R8G8B8, D3DPOOL_SYSTEMMEM,
-                                                &system, nullptr)))) {
-        return false;
-    }
-    if (FAILED(BW_GPU_CHECK(D()->CreateTexture(m_width, m_height, m_levels, 0, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &gpu,
+                                                &system, nullptr))) ||
+        FAILED(BW_GPU_CHECK(D()->CreateTexture(m_width, m_height, m_levels, 0, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &gpu,
                                                 nullptr)))) {
-        system->Release();
         return false;
     }
-    m_fullSystem = system;
-    m_full = gpu;
-    Release<IDirect3DTexture9>(m_gpu);  // a stage that still uses it is switched by UploadBound
+    m_fullSystem = std::move(system);
+    m_full = std::move(gpu);
+    m_gpu.Reset();  // a stage that still uses it is switched by UploadBound
     m_dirtyLevels = ~0u;                // levels without precise pixels are converted at the next upload
     return true;
 }
@@ -538,30 +512,30 @@ void Texture::ConvertToFullPrecision(std::uint32_t level) noexcept
 {
     D3DLOCKED_RECT from{};
     D3DLOCKED_RECT to{};
-    if (FAILED(AsTexture(m_system)->LockRect(level, &from, nullptr, D3DLOCK_READONLY))) {
+    if (FAILED(m_system.Get()->LockRect(level, &from, nullptr, D3DLOCK_READONLY))) {
         return;
     }
-    if (SUCCEEDED(AsTexture(m_fullSystem)->LockRect(level, &to, nullptr, 0))) {
+    if (SUCCEEDED(m_fullSystem.Get()->LockRect(level, &to, nullptr, 0))) {
         const std::uint32_t width = LevelSize(m_width, level);
         for (std::uint32_t y = 0; y < LevelSize(m_height, level); ++y) {
             RowToArgb(m_format, static_cast<const std::uint8_t*>(from.pBits) + std::size_t{y} * from.Pitch,
                       reinterpret_cast<std::uint32_t*>(static_cast<std::uint8_t*>(to.pBits) + std::size_t{y} * to.Pitch),
                       width);
         }
-        AsTexture(m_fullSystem)->UnlockRect(level);
+        m_fullSystem.Get()->UnlockRect(level);
     }
-    AsTexture(m_system)->UnlockRect(level);
+    m_system.Get()->UnlockRect(level);
 }
 
 bool Texture::TopLevelHash(std::uint64_t& hash) noexcept
 {
     D3DLOCKED_RECT locked{};
     if (!CanConvert(m_format, Format::A8R8G8B8) ||
-        FAILED(AsTexture(m_system)->LockRect(0, &locked, nullptr, D3DLOCK_READONLY))) {
+        FAILED(m_system.Get()->LockRect(0, &locked, nullptr, D3DLOCK_READONLY))) {
         return false;
     }
     hash = textures::Hash(m_format, m_width, m_height, static_cast<const std::uint8_t*>(locked.pBits), locked.Pitch);
-    AsTexture(m_system)->UnlockRect(0);
+    m_system.Get()->UnlockRect(0);
     return true;
 }
 
@@ -571,7 +545,7 @@ bool Texture::SetFullPrecision(std::uint32_t level, const std::uint32_t* argb, s
         return false;
     }
     D3DLOCKED_RECT to{};
-    if (FAILED(BW_GPU_CHECK(AsTexture(m_fullSystem)->LockRect(level, &to, nullptr, 0)))) {
+    if (FAILED(BW_GPU_CHECK(m_fullSystem.Get()->LockRect(level, &to, nullptr, 0)))) {
         return false;
     }
     const std::size_t rowBytes = std::size_t{LevelSize(m_width, level)} * sizeof(std::uint32_t);
@@ -579,7 +553,7 @@ bool Texture::SetFullPrecision(std::uint32_t level, const std::uint32_t* argb, s
         std::memcpy(static_cast<std::uint8_t*>(to.pBits) + std::size_t{y} * to.Pitch,
                     reinterpret_cast<const std::uint8_t*>(argb) + std::size_t{y} * pitch, rowBytes);
     }
-    AsTexture(m_fullSystem)->UnlockRect(level);
+    m_fullSystem.Get()->UnlockRect(level);
     m_preciseLevels |= 1u << level;
     m_dirtyLevels |= 1u << level;
     return true;
@@ -593,11 +567,11 @@ void Texture::CopyFullPrecision(std::uint32_t level, Texture& destination, std::
         return;
     }
     D3DLOCKED_RECT from{};
-    if (FAILED(AsTexture(m_fullSystem)->LockRect(level, &from, nullptr, D3DLOCK_READONLY))) {
+    if (FAILED(m_fullSystem.Get()->LockRect(level, &from, nullptr, D3DLOCK_READONLY))) {
         return;
     }
     (void)destination.SetFullPrecision(destinationLevel, static_cast<const std::uint32_t*>(from.pBits), from.Pitch);
-    AsTexture(m_fullSystem)->UnlockRect(level);
+    m_fullSystem.Get()->UnlockRect(level);
 }
 
 void Texture::Upload() noexcept
@@ -613,7 +587,7 @@ void Texture::Upload() noexcept
         const std::uint64_t now = GetTickCount64();
         if (now - m_lastChange < kAnimatedMilliseconds) {
             m_hash = 0;
-            Release<IDirect3DTexture9>(m_replacement);
+            m_replacement.Reset();
         }
         else {
             Identify();
@@ -626,18 +600,19 @@ void Texture::Upload() noexcept
                 ConvertToFullPrecision(level);
             }
         }
-        BW_GPU_CHECK(D()->UpdateTexture(AsTexture(m_fullSystem), AsTexture(m_full)));
+        BW_GPU_CHECK(D()->UpdateTexture(m_fullSystem.Get(), m_full.Get()));
     }
     else {
-        BW_GPU_CHECK(D()->UpdateTexture(AsTexture(m_system), AsTexture(m_gpu)));
+        BW_GPU_CHECK(D()->UpdateTexture(m_system.Get(), m_gpu.Get()));
     }
     m_dirtyLevels = 0;
 }
 
 namespace {
 
-/// A texture pack's image as a GPU texture with a full mipmap chain (cached by file), or null.
-IDirect3DTexture9* Replacement(const std::filesystem::path& path, bool alpha) noexcept
+/// A texture pack's image as a GPU texture with a full mipmap chain (cached by file), or null. May throw
+/// std::bad_alloc; see Replacement.
+IDirect3DTexture9* LoadReplacement(const std::filesystem::path& path, bool alpha)
 {
     Device& d = *g_device;
     const std::wstring key = path.wstring() + (alpha ? L"" : L"|opaque");
@@ -652,7 +627,7 @@ IDirect3DTexture9* Replacement(const std::filesystem::path& path, bool alpha) no
     D3DCAPS9 caps{};
     d.device->GetDeviceCaps(&caps);
     if (image.width > caps.MaxTextureWidth || image.height > caps.MaxTextureHeight) {
-        log::Warning("Textures: {} is {}x{}; this GPU takes at most {}x{}", path.string(), image.width, image.height,
+        log::Warning("Textures: {} is {}x{}; this GPU takes at most {}x{}", log::PathText(path), image.width, image.height,
                      caps.MaxTextureWidth, caps.MaxTextureHeight);
         return nullptr;
     }
@@ -699,8 +674,19 @@ IDirect3DTexture9* Replacement(const std::filesystem::path& path, bool alpha) no
         return nullptr;
     }
     cached = gpu;
-    log::Info("Textures: using {} ({}x{})", path.string(), width, height);
+    log::Info("Textures: using {} ({}x{})", log::PathText(path), width, height);
     return cached.Get();
+}
+
+IDirect3DTexture9* Replacement(const std::filesystem::path& path, bool alpha) noexcept
+{
+    try {
+        return LoadReplacement(path, alpha);
+    }
+    catch (const std::bad_alloc&) {
+        log::Warning("Textures: out of memory for {}", log::PathText(path));
+        return nullptr;
+    }
 }
 
 }  // namespace
@@ -711,17 +697,17 @@ void Texture::Identify() noexcept
         return;
     }
     D3DLOCKED_RECT locked{};
-    if (FAILED(AsTexture(m_system)->LockRect(0, &locked, nullptr, D3DLOCK_READONLY))) {
+    if (FAILED(m_system.Get()->LockRect(0, &locked, nullptr, D3DLOCK_READONLY))) {
         return;
     }
     const auto* bits = static_cast<const std::uint8_t*>(locked.pBits);
     const std::uint64_t hash = textures::Hash(m_format, m_width, m_height, bits, locked.Pitch);
     if (hash == m_hash) {
-        AsTexture(m_system)->UnlockRect(0);
+        m_system.Get()->UnlockRect(0);
         return;
     }
     m_hash = hash;
-    Release<IDirect3DTexture9>(m_replacement);
+    m_replacement.Reset();
 
     // A source with more colour than this texture's format (a 24-bit file) is shown at full colour.
     textures::Source source;
@@ -744,10 +730,10 @@ void Texture::Identify() noexcept
             image.argb.resize(std::size_t{m_width} * m_height);
             D3DLOCKED_RECT precise{};
             if ((m_preciseLevels & 1u) != 0 &&
-                SUCCEEDED(AsTexture(m_fullSystem)->LockRect(0, &precise, nullptr, D3DLOCK_READONLY))) {
+                SUCCEEDED(m_fullSystem.Get()->LockRect(0, &precise, nullptr, D3DLOCK_READONLY))) {
                 ImageToArgb(Format::A8R8G8B8, static_cast<const std::uint8_t*>(precise.pBits), precise.Pitch, m_width,
                             m_height, image.argb.data());
-                AsTexture(m_fullSystem)->UnlockRect(0);
+                m_fullSystem.Get()->UnlockRect(0);
             }
             else {
                 ImageToArgb(m_format, bits, locked.Pitch, m_width, m_height, image.argb.data());
@@ -761,11 +747,10 @@ void Texture::Identify() noexcept
 
     if (const std::filesystem::path path = textures::FindReplacement(hash, source.name); !path.empty()) {
         if (IDirect3DTexture9* replacement = Replacement(path, HasAlpha(m_format))) {
-            replacement->AddRef();
-            m_replacement = replacement;
+            m_replacement = replacement;  // takes a reference; the cache keeps its own
         }
     }
-    AsTexture(m_system)->UnlockRect(0);
+    m_system.Get()->UnlockRect(0);
 }
 
 // ----------------------------------------------------------------------------------------------------- RenderTarget
@@ -779,46 +764,41 @@ std::unique_ptr<RenderTarget> RenderTarget::Create(std::uint32_t width, std::uin
     const D3DFORMAT native = ToD3D(format);
     if (d.multisample != D3DMULTISAMPLE_NONE) {
         // Draws go to a multisampled surface; the single-sampled copy is a texture so that it can be drawn back.
-        IDirect3DTexture9* texture = nullptr;
-        IDirect3DSurface9* surface = nullptr;
-        IDirect3DSurface9* multisampled = nullptr;
+        ComPtr<IDirect3DTexture9> texture;
+        ComPtr<IDirect3DSurface9> surface;
+        ComPtr<IDirect3DSurface9> multisampled;
         if (SUCCEEDED(D()->CreateTexture(width, height, 1, D3DUSAGE_RENDERTARGET, native, D3DPOOL_DEFAULT, &texture,
                                          nullptr)) &&
             SUCCEEDED(texture->GetSurfaceLevel(0, &surface)) &&
             SUCCEEDED(D()->CreateRenderTarget(width, height, native, d.multisample, 0, FALSE, &multisampled, nullptr))) {
             log::Info("Direct3D 9: render target {}x{} {}, {} samples per pixel", width, height, Name(format),
                       static_cast<int>(d.multisample));
-            std::unique_ptr<RenderTarget> target(
-                new (std::nothrow) RenderTarget(surface, texture, multisampled, width, height, format));
+            std::unique_ptr<RenderTarget> target(new (std::nothrow) RenderTarget(
+                std::move(surface), std::move(texture), std::move(multisampled), width, height, format));
             if (target) {
                 return target;
             }
-        }
-        if (multisampled != nullptr) {
-            multisampled->Release();
-        }
-        if (surface != nullptr) {
-            surface->Release();
-        }
-        if (texture != nullptr) {
-            texture->Release();
         }
         log::Warning("Direct3D 9: no multisampled {}x{} {} render target; anti-aliasing is off", width, height,
                      Name(format));
         d.multisample = D3DMULTISAMPLE_NONE;  // depth buffers must match
     }
-    IDirect3DSurface9* surface = nullptr;
+    ComPtr<IDirect3DSurface9> surface;
     if (FAILED(BW_GPU_CHECK(D()->CreateRenderTarget(width, height, native, D3DMULTISAMPLE_NONE, 0, FALSE, &surface,
                                                     nullptr)))) {
         return nullptr;
     }
     log::Info("Direct3D 9: render target {}x{} {}", width, height, Name(format));
-    std::unique_ptr<RenderTarget> target(new (std::nothrow)
-                                             RenderTarget(surface, nullptr, nullptr, width, height, format));
-    if (!target) {
-        surface->Release();
-    }
-    return target;
+    return std::unique_ptr<RenderTarget>(
+        new (std::nothrow) RenderTarget(std::move(surface), nullptr, nullptr, width, height, format));
+}
+
+RenderTarget::RenderTarget(ComPtr<IDirect3DSurface9> surface, ComPtr<IDirect3DTexture9> texture,
+                           ComPtr<IDirect3DSurface9> multisampled, std::uint32_t width, std::uint32_t height,
+                           Format format) noexcept
+    : m_surface(std::move(surface)), m_texture(std::move(texture)), m_multisampled(std::move(multisampled)),
+      m_width(width), m_height(height), m_format(format)
+{
 }
 
 RenderTarget::~RenderTarget()
@@ -826,41 +806,38 @@ RenderTarget::~RenderTarget()
     if (g_device != nullptr && g_device->target == this) {
         g_device->target = nullptr;
     }
-    Release<IDirect3DSurface9>(m_multisampled);
-    Release<IDirect3DSurface9>(m_surface);
-    Release<IDirect3DTexture9>(m_texture);
 }
 
-void* RenderTarget::Resolved() noexcept
+IDirect3DSurface9* RenderTarget::Resolved() noexcept
 {
     if (m_newest == Newest::Multisampled) {
         ++g_statistics.resolves;
-        BW_GPU_CHECK(D()->StretchRect(AsSurface(m_multisampled), nullptr, AsSurface(m_surface), nullptr, D3DTEXF_NONE));
+        BW_GPU_CHECK(D()->StretchRect(m_multisampled.Get(), nullptr, m_surface.Get(), nullptr, D3DTEXF_NONE));
         m_newest = Newest::Both;
     }
-    return m_surface;
+    return m_surface.Get();
 }
 
-void* RenderTarget::ForWriting() noexcept
+IDirect3DSurface9* RenderTarget::ForWriting() noexcept
 {
-    void* surface = Resolved();
+    IDirect3DSurface9* surface = Resolved();
     if (m_multisampled != nullptr) {
         m_newest = Newest::Single;
     }
     return surface;
 }
 
-void* RenderTarget::ForDrawing() noexcept
+IDirect3DSurface9* RenderTarget::ForDrawing() noexcept
 {
     if (m_multisampled == nullptr) {
-        return m_surface;
+        return m_surface.Get();
     }
     if (m_newest == Newest::Single) {
         // Copied or CPU-written pixels: put them under what is drawn next.
-        DrawTexture(AsTexture(m_texture), AsSurface(m_multisampled), m_width, m_height);
+        DrawTexture(m_texture.Get(), m_multisampled.Get(), m_width, m_height);
     }
     m_newest = Newest::Multisampled;
-    return m_multisampled;
+    return m_multisampled.Get();
 }
 
 bool RenderTarget::Read(void* bits, std::int32_t pitch) noexcept
@@ -869,7 +846,7 @@ bool RenderTarget::Read(void* bits, std::int32_t pitch) noexcept
     ComPtr<IDirect3DSurface9> system;
     if (FAILED(BW_GPU_CHECK(D()->CreateOffscreenPlainSurface(m_width, m_height, ToD3D(m_format), D3DPOOL_SYSTEMMEM,
                                                               &system, nullptr))) ||
-        FAILED(BW_GPU_CHECK(D()->GetRenderTargetData(AsSurface(Resolved()), system.Get())))) {
+        FAILED(BW_GPU_CHECK(D()->GetRenderTargetData(Resolved(), system.Get())))) {
         return false;
     }
     D3DLOCKED_RECT locked{};
@@ -895,7 +872,7 @@ bool RenderTarget::Write(const void* bits, std::int32_t pitch) noexcept
 
 void RenderTarget::Fill(const RECT* rect, std::uint32_t argb) noexcept
 {
-    BW_GPU_CHECK(D()->ColorFill(AsSurface(ForWriting()), rect, argb));
+    BW_GPU_CHECK(D()->ColorFill(ForWriting(), rect, argb));
 }
 
 void RenderTarget::Draw(const void* bits, std::int32_t pitch, Format format, std::uint32_t width,
@@ -924,14 +901,14 @@ void RenderTarget::Draw(const void* bits, std::int32_t pitch, Format format, std
     d.stagingSystem->UnlockRect();
     const POINT origin{0, 0};
     BW_GPU_CHECK(d.device->UpdateSurface(d.stagingSystem.Get(), &stagingRect, d.stagingGpu.Get(), &origin));
-    BW_GPU_CHECK(d.device->StretchRect(d.stagingGpu.Get(), &stagingRect, AsSurface(ForWriting()), &destination,
+    BW_GPU_CHECK(d.device->StretchRect(d.stagingGpu.Get(), &stagingRect, ForWriting(), &destination,
                                        SameSize(stagingRect, destination) ? D3DTEXF_POINT : D3DTEXF_LINEAR));
 }
 
 void RenderTarget::CopyFrom(RenderTarget& source, const RECT& sourceRect, const RECT& destination) noexcept
 {
-    IDirect3DSurface9* from = AsSurface(source.Resolved());
-    BW_GPU_CHECK(D()->StretchRect(from, &sourceRect, AsSurface(ForWriting()), &destination,
+    IDirect3DSurface9* from = source.Resolved();
+    BW_GPU_CHECK(D()->StretchRect(from, &sourceRect, ForWriting(), &destination,
                                   SameSize(sourceRect, destination) ? D3DTEXF_POINT : D3DTEXF_LINEAR));
 }
 
@@ -943,24 +920,29 @@ std::unique_ptr<DepthBuffer> DepthBuffer::Create(std::uint32_t width, std::uint3
         return nullptr;
     }
     Device& d = *g_device;
-    IDirect3DSurface9* surface = nullptr;
+    ComPtr<IDirect3DSurface9> surface;
     if (d.multisample != D3DMULTISAMPLE_NONE) {
         // Multisampled depth cannot be locked; nothing needs to read it (the sun test uses ProbeDepth).
         if (SUCCEEDED(BW_GPU_CHECK(D()->CreateDepthStencilSurface(width, height, D3DFMT_D24S8, d.multisample, 0, FALSE,
                                                                    &surface, nullptr)))) {
-            return std::unique_ptr<DepthBuffer>(new (std::nothrow) DepthBuffer(surface, false));
+            return std::unique_ptr<DepthBuffer>(new (std::nothrow) DepthBuffer(std::move(surface), false));
         }
     }
     if (SUCCEEDED(D()->CreateDepthStencilSurface(width, height, D3DFMT_D32F_LOCKABLE, D3DMULTISAMPLE_NONE, 0, FALSE,
                                                  &surface, nullptr))) {
-        return std::unique_ptr<DepthBuffer>(new (std::nothrow) DepthBuffer(surface, true));
+        return std::unique_ptr<DepthBuffer>(new (std::nothrow) DepthBuffer(std::move(surface), true));
     }
     log::Warning("Direct3D 9: no lockable depth buffer; the CPU cannot read depth");
     if (FAILED(BW_GPU_CHECK(D()->CreateDepthStencilSurface(width, height, D3DFMT_D24S8, D3DMULTISAMPLE_NONE, 0, FALSE,
                                                            &surface, nullptr)))) {
         return nullptr;
     }
-    return std::unique_ptr<DepthBuffer>(new (std::nothrow) DepthBuffer(surface, false));
+    return std::unique_ptr<DepthBuffer>(new (std::nothrow) DepthBuffer(std::move(surface), false));
+}
+
+DepthBuffer::DepthBuffer(ComPtr<IDirect3DSurface9> surface, bool readable) noexcept
+    : m_surface(std::move(surface)), m_readable(readable)
+{
 }
 
 bool DepthBuffer::Read(const RECT& rect, float* values) noexcept
@@ -970,7 +952,7 @@ bool DepthBuffer::Read(const RECT& rect, float* values) noexcept
     }
     ++g_statistics.depthReads;
     D3DLOCKED_RECT locked{};
-    if (FAILED(BW_GPU_CHECK(AsSurface(m_surface)->LockRect(&locked, &rect, D3DLOCK_READONLY)))) {
+    if (FAILED(BW_GPU_CHECK(m_surface.Get()->LockRect(&locked, &rect, D3DLOCK_READONLY)))) {
         return false;
     }
     const auto width = static_cast<std::size_t>(rect.right - rect.left);
@@ -978,7 +960,7 @@ bool DepthBuffer::Read(const RECT& rect, float* values) noexcept
         std::memcpy(values + std::size_t(y) * width, static_cast<const std::uint8_t*>(locked.pBits) + std::size_t(y) * locked.Pitch,
                     width * sizeof(float));
     }
-    AsSurface(m_surface)->UnlockRect();
+    m_surface.Get()->UnlockRect();
     return true;
 }
 
@@ -990,7 +972,6 @@ DepthBuffer::~DepthBuffer()
             D()->SetDepthStencilSurface(nullptr);
         }
     }
-    AsSurface(m_surface)->Release();
 }
 
 // ------------------------------------------------------------------------------------------------------------ State
@@ -1000,8 +981,8 @@ void SetRenderTarget(RenderTarget* target, DepthBuffer* depth) noexcept
     if (!Ready() || target == nullptr) {
         return;
     }
-    BW_GPU_CHECK(D()->SetRenderTarget(0, AsSurface(target->ForDrawing())));
-    BW_GPU_CHECK(D()->SetDepthStencilSurface(depth != nullptr ? AsSurface(depth->Native()) : nullptr));
+    BW_GPU_CHECK(D()->SetRenderTarget(0, target->ForDrawing()));
+    BW_GPU_CHECK(D()->SetDepthStencilSurface(depth != nullptr ? depth->Native() : nullptr));
     g_device->target = target;
     g_device->depth = depth;
 }
@@ -1048,7 +1029,7 @@ void SetTexture(std::uint32_t stage, Texture* texture) noexcept
     }
     g_device->bound[stage] = texture;
     g_device->boundNative[stage] = texture != nullptr ? texture->Native() : nullptr;
-    BW_GPU_CHECK(D()->SetTexture(stage, AsTexture(g_device->boundNative[stage])));
+    BW_GPU_CHECK(D()->SetTexture(stage, g_device->boundNative[stage]));
 }
 
 void SetTransform(std::uint32_t state, const float* matrix) noexcept
@@ -1272,7 +1253,7 @@ void Present(RenderTarget& frame, const RECT& source, HWND window, const RECT& d
     RECT target = destination;
     IntersectRect(&target, &target, &client);
     if (!IsRectEmpty(&target)) {
-        BW_GPU_CHECK(d.device->StretchRect(AsSurface(frame.Resolved()), &source, back.Get(), &target,
+        BW_GPU_CHECK(d.device->StretchRect(frame.Resolved(), &source, back.Get(), &target,
                                            SameSize(source, target) ? D3DTEXF_POINT : D3DTEXF_LINEAR));
     }
     BW_GPU_CHECK(d.swapChain->Present(nullptr, nullptr, window, nullptr, 0));

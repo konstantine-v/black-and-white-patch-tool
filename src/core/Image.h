@@ -30,6 +30,10 @@ inline constexpr std::string_view kSupportedTextSha256 =
 inline constexpr std::string_view kRetailSafeDiscFileSha256 =
     "b1163b44f4e6c5e64d81d5fcce95dea8efdc587ad52910df4d4942e01dbfb3d1";
 
+/// The NT headers of a module mapped by the loader, after checking the DOS and PE signatures; nullptr when `module`
+/// is not a 32-bit PE image.
+[[nodiscard]] const IMAGE_NT_HEADERS32* NtHeaders(HMODULE module) noexcept;
+
 [[nodiscard]] std::optional<Section> FindSection(HMODULE module, std::string_view name) noexcept;
 
 [[nodiscard]] std::optional<Sha256> ComputeSha256(std::span<const std::byte> data) noexcept;

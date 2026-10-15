@@ -89,6 +89,7 @@ struct InstrumentedTable {
 std::vector<InstrumentedTable> g_instrumentedTables;
 /// Original method address -> method id, for finding method pointers the game copied out of a table.
 std::vector<std::pair<Address, std::uint32_t>> g_originalMethods;
+bool g_methodsSorted = false;
 HMODULE g_game = nullptr;
 image::Section g_gameText{};
 
@@ -114,11 +115,26 @@ void Instrument(void* object, Interface kind) noexcept
     if (std::ranges::find(g_instrumentedTables, table, &InstrumentedTable::table) != g_instrumentedTables.end()) {
         return;
     }
-    auto* stubs = static_cast<std::uint8_t*>(
-        VirtualAlloc(nullptr, methods.size() * kStubSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+    // Stubs are written while writable, then made execute-only for good. The targets they jump through
+    // (`originals`) are ordinary data that RefreshDirectXTrace updates.
+    const std::size_t stubBytes = methods.size() * kStubSize;
+    auto* stubs = static_cast<std::uint8_t*>(VirtualAlloc(nullptr, stubBytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
     auto* originals = new (std::nothrow) void*[methods.size()];
     if (stubs == nullptr || originals == nullptr) {
         log::Warning("TraceDirectX: out of memory instrumenting {}", kInterfaces[static_cast<std::size_t>(kind)].name);
+        if (stubs != nullptr) {
+            VirtualFree(stubs, 0, MEM_RELEASE);
+        }
+        delete[] originals;
+        return;
+    }
+    try {
+        g_originalMethods.reserve(g_originalMethods.size() + methods.size());
+        g_instrumentedTables.reserve(g_instrumentedTables.size() + 1);
+    }
+    catch (const std::bad_alloc&) {
+        VirtualFree(stubs, 0, MEM_RELEASE);
+        delete[] originals;
         return;
     }
     for (std::size_t slot = 0; slot < methods.size(); ++slot) {
@@ -141,7 +157,10 @@ void Instrument(void* object, Interface kind) noexcept
         stub[18] = 0x25;
         Write32(stub + 19, static_cast<std::uint32_t>(reinterpret_cast<Address>(&originals[slot])));
     }
-    patch::FlushCode(reinterpret_cast<Address>(stubs), methods.size() * kStubSize);
+    DWORD stubProtection = 0;
+    VirtualProtect(stubs, stubBytes, PAGE_EXECUTE_READ, &stubProtection);
+    patch::FlushCode(reinterpret_cast<Address>(stubs), stubBytes);
+    g_methodsSorted = false;
 
     DWORD previous = 0;
     if (!VirtualProtect(table, methods.size() * sizeof(void*), PAGE_READWRITE, &previous)) {
@@ -257,6 +276,11 @@ HRESULT WINAPI DirectDrawCreateExTraced(GUID* guid, void** directDraw, REFIID ii
 /// instrumented tables and are missing from the counts.
 void LogCopiedMethods()
 {
+    // Sorted once: the scan below looks up every word of .data and .rdata.
+    if (!g_methodsSorted) {
+        std::ranges::sort(g_originalMethods);
+        g_methodsSorted = true;
+    }
     for (const char* name : {".data", ".rdata"}) {
         const std::optional<image::Section> section = image::FindSection(g_game, name);
         if (!section) {
@@ -272,12 +296,12 @@ void LogCopiedMethods()
                 }
             }
             const Address value = *reinterpret_cast<const Address*>(address);
-            for (const auto& [method, id] : g_originalMethods) {
-                if (value == method) {
-                    const InterfaceInfo& info = kInterfaces[id >> 8];
-                    log::Warning("TraceDirectX: 0x{:08x} holds a copy of {}::{} (calls through it are not counted)",
-                                 address, info.name, info.methods[id & 0xff]);
-                }
+            const auto [first, last] =
+                std::ranges::equal_range(g_originalMethods, value, {}, &std::pair<Address, std::uint32_t>::first);
+            for (auto it = first; it != last; ++it) {
+                const InterfaceInfo& info = kInterfaces[it->second >> 8];
+                log::Warning("TraceDirectX: 0x{:08x} holds a copy of {}::{} (calls through it are not counted)",
+                             address, info.name, info.methods[it->second & 0xff]);
             }
         }
     }
@@ -351,7 +375,7 @@ void InstallDirectXTrace(HMODULE game, const std::filesystem::path& output) noex
         log::Warning("TraceDirectX: DirectDrawCreateEx is not imported");
         return;
     }
-    log::Info("TraceDirectX: recording DirectDraw/Direct3D calls to {}", output.string());
+    log::Info("TraceDirectX: recording DirectDraw/Direct3D calls to {}", log::PathText(output));
 }
 
 void WriteDirectXTrace() noexcept

@@ -16,6 +16,7 @@
 //
 // Neutral (no d3d9.h): Gpu.cpp asks for hashes, sources and images and creates the textures.
 
+#include "core/Bitmap.h"
 #include "render/Format.h"
 
 #include <cstdint>
@@ -54,12 +55,8 @@ void Initialise(const Settings& settings) noexcept;
 /// (".\Data\Textures\Sky.raw" becomes "data\textures\sky").
 [[nodiscard]] std::string NormaliseName(std::string_view path);
 
-/// A decoded image: `width` x `height` A8R8G8B8 pixels, row by row.
-struct Image {
-    std::uint32_t width = 0;
-    std::uint32_t height = 0;
-    std::vector<std::uint32_t> argb;
-};
+/// A decoded image (core/Bitmap.h).
+using Image = Bitmap;
 
 /// Where a texture came from.
 struct Source {

@@ -1,12 +1,21 @@
 #include "Test.h"
 
+#include "core/Bitmap.h"
+#include "core/CommandLine.h"
 #include "core/Config.h"
+#include "core/Handle.h"
 #include "core/Hook.h"
 #include "core/Image.h"
+#include "core/Log.h"
+#include "core/Module.h"
 #include "core/Text.h"
 #include "core/Windows.h"
 
+#include <shellapi.h>
+
 #include <array>
+#include <filesystem>
+#include <vector>
 #include <cstring>
 #include <span>
 #include <string>
@@ -105,4 +114,88 @@ TEST(DllStaysInertOutsideTheGame)
     if (module != nullptr) {
         FreeLibrary(module);
     }
+}
+
+TEST(QuotedArgumentsReadBackUnchanged)
+{
+    const std::vector<std::wstring> arguments = {
+        L"plain", L"with space", LR"(quote"inside)", LR"(trailing\)", LR"(back\\"slash)", LR"(C:\Games\Black & White\)", L"",
+    };
+    std::wstring commandLine = L"program.exe";
+    for (const std::wstring& argument : arguments) {
+        commandLine += L' ';
+        commandLine += bw::QuoteArgument(argument);
+    }
+    int count = 0;
+    LPWSTR* parsed = CommandLineToArgvW(commandLine.c_str(), &count);
+    CHECK(parsed != nullptr);
+    if (parsed == nullptr) {
+        return;
+    }
+    CHECK_EQ(static_cast<std::size_t>(count), arguments.size() + 1);
+    for (std::size_t i = 0; i < arguments.size() && i + 1 < static_cast<std::size_t>(count); ++i) {
+        CHECK(arguments[i] == parsed[i + 1]);
+    }
+    LocalFree(parsed);
+}
+
+TEST(UniqueHandleClosesAndMoves)
+{
+    bw::UniqueHandle event(CreateEventW(nullptr, TRUE, FALSE, nullptr));
+    CHECK(static_cast<bool>(event));
+    const HANDLE raw = event.Get();
+    bw::UniqueHandle moved(std::move(event));
+    CHECK(!event);
+    CHECK(moved.Get() == raw);
+    moved.Reset();
+    DWORD flags = 0;
+    CHECK(!GetHandleInformation(raw, &flags));  // closed
+    CHECK(!bw::UniqueHandle(INVALID_HANDLE_VALUE));
+}
+
+TEST(ModulePathIsTheExecutable)
+{
+    const std::filesystem::path path = bw::ModulePath(nullptr);
+    CHECK(path.filename() == L"bw_tests.exe");
+    CHECK(std::filesystem::exists(path));
+    CHECK(bw::ModuleDirectory(nullptr) == path.parent_path());
+}
+
+TEST(NtHeadersAreValidated)
+{
+    CHECK(bw::image::NtHeaders(GetModuleHandleW(nullptr)) != nullptr);
+    CHECK(bw::image::NtHeaders(nullptr) == nullptr);
+    alignas(8) std::array<std::byte, 256> notAnImage{};
+    CHECK(bw::image::NtHeaders(reinterpret_cast<HMODULE>(notAnImage.data())) == nullptr);
+    CHECK(bw::image::FindSection(GetModuleHandleW(nullptr), ".text").has_value());
+}
+
+TEST(PathTextIsUtf8)
+{
+    CHECK_EQ(bw::log::PathText(L"C:\\Games\\B\u00e4r\\\u732b.png"), std::string("C:\\Games\\B\xc3\xa4r\\\xe7\x8c\xab.png"));
+    CHECK_EQ(bw::log::PathText({}), std::string());
+}
+
+TEST(BitmapsRoundTripThroughPng)
+{
+    const std::filesystem::path file = std::filesystem::temp_directory_path() / L"bw_tests_bitmap.png";
+    bw::Bitmap bitmap;
+    bitmap.width = 3;
+    bitmap.height = 2;
+    bitmap.argb = {0xffff0000u, 0x8000ff00u, 0x000000ffu, 0xffffffffu, 0x40102030u, 0xff000000u};
+    CHECK(bw::WritePng(file, bitmap));
+    bw::Bitmap read;
+    CHECK(bw::ReadBitmap(file, read));
+    CHECK_EQ(read.width, 3u);
+    CHECK_EQ(read.height, 2u);
+    CHECK(read.argb == bitmap.argb);
+    std::error_code error;
+    std::filesystem::remove(file, error);
+
+    bw::Bitmap wrongSize;
+    wrongSize.width = 4;
+    wrongSize.height = 4;
+    wrongSize.argb.resize(3);
+    CHECK(!bw::WritePng(file, wrongSize));
+    CHECK(!bw::ReadBitmap(std::filesystem::temp_directory_path() / L"bw_tests_missing.png", read));
 }

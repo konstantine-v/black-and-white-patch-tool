@@ -152,8 +152,8 @@ Measured on an RTX 3080 Ti, front end: original renderer 142 fps at 1920x1080 (w
 Direct3D 9 143 fps at 2560x1440 with VSync off, also with 4x anti-aliasing, in the front end and a skirmish game.
 
 Debugging aids ([Log] Debug=1): surface kinds and blit paths, per-frame statistics (draws, texture uploads, depth
-read-backs and probes, resolves, frame read-backs) with the frame rate, and with `BW_DUMP_TEXTURES=1` in the environment the first 60 textures bound as
-PNG files in `Screenshots\`.
+read-backs and probes, resolves, frame read-backs) with the frame rate. Texture dumps: `[Textures] Dump=1`
+([TEXTURES.md](TEXTURES.md)).
 
 ## Steps
 

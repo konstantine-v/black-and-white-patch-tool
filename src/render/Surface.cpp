@@ -73,11 +73,14 @@ bool Contains(const RECT& outer, const RECT& inner) noexcept
            inner.bottom <= outer.bottom && inner.left < inner.right && inner.top < inner.bottom;
 }
 
-void LogOnce(bool& logged, std::string_view message) noexcept
+/// Logs a message (with format arguments) the first time its call site runs. Never throws: formatting happens inside
+/// the logger, which catches its own failures.
+template <typename... Args>
+void LogOnce(bool& logged, std::format_string<Args...> format, Args&&... args) noexcept
 {
     if (!logged) {
         logged = true;
-        log::Info("Renderer: {}", message);
+        log::Info(format, std::forward<Args>(args)...);
     }
 }
 
@@ -87,14 +90,24 @@ const char* RoleName(SurfaceRole role) noexcept
     return kNames[static_cast<int>(role)];
 }
 
-/// Logs (at Debug level, once per distinct text) what kinds of surfaces and blits the game uses.
-void LogKind(std::string text)
+/// Logs (at Debug level, once per distinct text) what kinds of surfaces and blits the game uses. Costs nothing
+/// without [Log] Debug=1: blits are frequent.
+template <typename... Args>
+void LogKind(std::format_string<Args...> format, Args&&... args) noexcept
 {
-    static std::mutex mutex;
-    static std::set<std::string> seen;
-    std::lock_guard lock(mutex);
-    if (seen.insert(text).second) {
-        log::Debug("Renderer: {}", text);
+    if (!log::DebugEnabled()) {
+        return;
+    }
+    try {
+        std::string text = std::format(format, std::forward<Args>(args)...);
+        static std::mutex mutex;
+        static std::set<std::string> seen;
+        std::lock_guard lock(mutex);
+        if (seen.insert(text).second) {
+            log::Debug("Renderer: {}", text);
+        }
+    }
+    catch (...) {
     }
 }
 
@@ -112,12 +125,20 @@ void SetPitchOrSize(DDSURFACEDESC2& desc, Format format, std::int32_t pitch) noe
     }
 }
 
-std::string GuidText(REFIID iid)
-{
-    return std::format("{{{:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}}}", iid.Data1, iid.Data2,
-                       iid.Data3, iid.Data4[0], iid.Data4[1], iid.Data4[2], iid.Data4[3], iid.Data4[4], iid.Data4[5],
-                       iid.Data4[6], iid.Data4[7]);
-}
+/// A GUID as text ("{xxxxxxxx-xxxx-...}"), without allocating.
+struct GuidText {
+    explicit GuidText(REFIID iid) noexcept
+    {
+        const auto end = std::format_to_n(text.data(), static_cast<std::ptrdiff_t>(text.size() - 1),
+                                          "{{{:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}}}",
+                                          iid.Data1, iid.Data2, iid.Data3, iid.Data4[0], iid.Data4[1], iid.Data4[2],
+                                          iid.Data4[3], iid.Data4[4], iid.Data4[5], iid.Data4[6], iid.Data4[7])
+                             .out;
+        *end = '\0';
+    }
+    [[nodiscard]] std::string_view View() const noexcept { return text.data(); }
+    std::array<char, 40> text{};
+};
 
 /// A surface locked for CPU access for the duration of a blit.
 class CpuLock {
@@ -224,6 +245,13 @@ HRESULT Surface::Create(DirectDraw& owner, const DDSURFACEDESC2& requested, Surf
     }
 
     // Lower mipmap levels: surfaces sharing the top level's texture.
+    try {
+        surface->m_mipLevels.reserve(levels - 1);
+    }
+    catch (const std::bad_alloc&) {
+        surface->Release();
+        return DDERR_OUTOFMEMORY;
+    }
     DWORD width = desc.dwWidth;
     DWORD height = desc.dwHeight;
     for (std::uint32_t level = 1; level < levels; ++level) {
@@ -242,10 +270,10 @@ HRESULT Surface::Create(DirectDraw& owner, const DDSURFACEDESC2& requested, Surf
         }
         child->m_textureOwner = surface;
         child->m_level = level;
-        surface->m_mipLevels.push_back(child);
+        surface->m_mipLevels.push_back(child);  // reserved above: cannot throw
     }
-    LogKind(std::format("surface: {} {} caps 0x{:08x}/0x{:08x} levels {}", RoleName(role), Name(format),
-                        desc.ddsCaps.dwCaps, desc.ddsCaps.dwCaps2, levels));
+    LogKind("surface: {} {} caps 0x{:08x}/0x{:08x} levels {}", RoleName(role), Name(format),
+            desc.ddsCaps.dwCaps, desc.ddsCaps.dwCaps2, levels);
     *out = surface;
     return DD_OK;
 }
@@ -364,7 +392,7 @@ HRESULT Surface::QueryInterface(REFIID iid, LPVOID* out)
         static bool logged = false;
         if (!logged) {
             logged = true;
-            log::Info("Renderer: surface asked for interface {} (not provided)", GuidText(iid));
+            log::Info("Renderer: surface asked for interface {} (not provided)", GuidText(iid).View());
         }
         return E_NOINTERFACE;
     }
@@ -429,14 +457,14 @@ HRESULT Surface::Lock(LPRECT rect, LPDDSURFACEDESC2 desc, DWORD flags, HANDLE /*
         }
         if (m_role == SurfaceRole::RenderTarget) {
             static bool logged = false;
-            LogOnce(logged, "CPU access to a render target (read back from the GPU)");
+            LogOnce(logged, "Renderer: CPU access to a render target (read back from the GPU)");
             if ((flags & DDLOCK_WRITEONLY) == 0 && !m_target->Read(m_pixels.data(), m_pitch)) {
                 return DDERR_GENERIC;
             }
         }
         else {
             static bool logged = false;
-            LogOnce(logged, "CPU access to the primary surface (not shown)");
+            LogOnce(logged, "Renderer: CPU access to the primary surface (not shown)");
         }
         bits = m_pixels.data() + Offset(m_format, m_pitch, area.left, area.top);
         pitch = m_pitch;
@@ -445,14 +473,14 @@ HRESULT Surface::Lock(LPRECT rect, LPDDSURFACEDESC2 desc, DWORD flags, HANDLE /*
     case SurfaceRole::Depth: {
         // The game reads depth to test whether the sun is hidden; DepthView fills only the pages it touches.
         if (!m_depthView) {
-            m_depthView = std::make_unique<DepthView>();
+            m_depthView.reset(new (std::nothrow) DepthView());
         }
         m_pitch = AlignedPitch(m_format, Width());
         std::uint8_t* view =
-            m_depth->Readable() ? m_depthView->Begin(*m_depth, m_format, Width(), Height(), m_pitch) : nullptr;
+            m_depth->Readable() && m_depthView ? m_depthView->Begin(*m_depth, m_format, Width(), Height(), m_pitch) : nullptr;
         if (view == nullptr) {
             static bool logged = false;
-            LogOnce(logged, "the depth buffer cannot be read by the CPU");
+            LogOnce(logged, "Renderer: the depth buffer cannot be read by the CPU");
             return DDERR_UNSUPPORTED;
         }
         bits = view + Offset(m_format, m_pitch, area.left, area.top);
@@ -504,7 +532,7 @@ HRESULT Surface::Blt(LPRECT destination, LPDIRECTDRAWSURFACE7 source, LPRECT sou
     }
     if (flags & DDBLT_DEPTHFILL) {
         static bool logged = false;
-        LogOnce(logged, "depth fills are ignored");
+        LogOnce(logged, "Renderer: depth fills are ignored");
         return DD_OK;
     }
     Surface* from = From(source);
@@ -513,11 +541,11 @@ HRESULT Surface::Blt(LPRECT destination, LPDIRECTDRAWSURFACE7 source, LPRECT sou
     }
     if (flags & (DDBLT_DDFX | DDBLT_ROP | DDBLT_KEYDEST | DDBLT_KEYDESTOVERRIDE | DDBLT_ALPHASRC | DDBLT_ALPHADEST)) {
         static bool logged = false;
-        LogOnce(logged, std::format("Blt flags 0x{:08x} partly ignored", flags));
+        LogOnce(logged, "Renderer: Blt flags 0x{:08x} partly ignored", flags);
     }
     const RECT fromRect = sourceRect != nullptr ? *sourceRect : from->Bounds();
-    LogKind(std::format("blit: {} {} -> {} {} (flags 0x{:x})", RoleName(from->m_role), Name(from->m_format),
-                        RoleName(m_role), Name(m_format), flags));
+    LogKind("blit: {} {} -> {} {} (flags 0x{:x})", RoleName(from->m_role), Name(from->m_format),
+            RoleName(m_role), Name(m_format), flags);
     if (log::DebugEnabled()) {
         static int logged = 0;
         if (m_role != SurfaceRole::Primary && ++logged <= 80) {
@@ -562,7 +590,7 @@ HRESULT Surface::Fill(const RECT& rect, DWORD color) noexcept
     }
     case SurfaceRole::Depth: {
         static bool logged = false;
-        LogOnce(logged, "colour fills of depth buffers are ignored");
+        LogOnce(logged, "Renderer: colour fills of depth buffers are ignored");
         return DD_OK;
     }
     default:
@@ -595,7 +623,7 @@ HRESULT Surface::CopyFrom(Surface& source, const RECT& sourceRect, const RECT& d
             return Present(source, sourceRect, destination);
         }
         static bool logged = false;
-        LogOnce(logged, "blits from CPU surfaces to the primary surface are not shown");
+        LogOnce(logged, "Renderer: blits from CPU surfaces to the primary surface are not shown");
         return DD_OK;
     }
     if (m_role == SurfaceRole::RenderTarget) {
@@ -605,7 +633,7 @@ HRESULT Surface::CopyFrom(Surface& source, const RECT& sourceRect, const RECT& d
         }
         if (sourceKey) {
             static bool logged = false;
-            LogOnce(logged, "colour-keyed blits to render targets ignore the key");
+            LogOnce(logged, "Renderer: colour-keyed blits to render targets ignore the key");
         }
         CpuLock from(source, true);
         if (!from) {
@@ -617,7 +645,7 @@ HRESULT Surface::CopyFrom(Surface& source, const RECT& sourceRect, const RECT& d
     }
     if (m_role == SurfaceRole::Depth || source.m_role == SurfaceRole::Depth) {
         static bool logged = false;
-        LogOnce(logged, "blits between depth buffers are not supported");
+        LogOnce(logged, "Renderer: blits between depth buffers are not supported");
         return DDERR_UNSUPPORTED;
     }
 
@@ -670,7 +698,7 @@ HRESULT Surface::CopyPixels(Surface& source, const RECT& sourceRect, const RECT&
     }
     if (!CanConvert(source.m_format, m_format)) {
         static bool logged = false;
-        LogOnce(logged, std::format("blit from {} to {} is not supported", Name(source.m_format), Name(m_format)));
+        LogOnce(logged, "Renderer: blit from {} to {} is not supported", Name(source.m_format), Name(m_format));
         return DDERR_UNSUPPORTED;
     }
     // Block-compressed sources are decoded first (DirectDraw decompressed DXT surfaces in blits the same way).
@@ -710,7 +738,7 @@ HRESULT Surface::CopyPixels(Surface& source, const RECT& sourceRect, const RECT&
         // Compressing blit: whole 4x4 blocks of the destination, encoded from the (scaled) source.
         if ((destination.left | destination.top) & 3) {
             static bool logged = false;
-            LogOnce(logged, "compressing blits to unaligned rectangles are not supported");
+            LogOnce(logged, "Renderer: compressing blits to unaligned rectangles are not supported");
             return DDERR_UNSUPPORTED;
         }
         std::uint32_t pixels[16];
@@ -781,7 +809,7 @@ HRESULT Surface::Present(Surface& frame, const RECT& source, const RECT& destina
 HRESULT Surface::Flip(LPDIRECTDRAWSURFACE7 /*target*/, DWORD /*flags*/)
 {
     static bool logged = false;
-    LogOnce(logged, "Flip is not implemented (the game presents by Blt in windowed mode)");
+    LogOnce(logged, "Renderer: Flip is not implemented (the game presents by Blt in windowed mode)");
     return DD_OK;
 }
 
@@ -904,12 +932,12 @@ HRESULT Surface::SetColorKey(DWORD flags, LPDDCOLORKEY key)
         }
         if (m_role == SurfaceRole::Texture && key != nullptr) {
             static bool logged = false;
-            LogOnce(logged, "colour-keyed textures are drawn without their key");
+            LogOnce(logged, "Renderer: colour-keyed textures are drawn without their key");
         }
         return DD_OK;
     }
     static bool logged = false;
-    LogOnce(logged, std::format("colour key type 0x{:x} ignored", flags));
+    LogOnce(logged, "Renderer: colour key type 0x{:x} ignored", flags);
     return DD_OK;
 }
 
@@ -1057,7 +1085,7 @@ HRESULT TextureView::Load(LPDIRECT3DTEXTURE2 source)
         return DDERR_INVALIDPARAMS;
     }
     static bool logged = false;
-    LogOnce(logged, "IDirect3DTexture2::Load used");
+    LogOnce(logged, "Renderer: IDirect3DTexture2::Load used");
     return m_owner.LoadFrom(static_cast<TextureView*>(source)->m_owner);
 }
 

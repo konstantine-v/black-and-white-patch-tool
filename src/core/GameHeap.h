@@ -33,7 +33,9 @@ inline void GameFree(void* memory) noexcept
 
 /// Base for decompiled classes whose objects original code may create or destroy.
 struct GameAllocated {
-    static void* operator new(std::size_t size) { return GameAllocate(size); }
+    /// noexcept: the game heap returns nullptr when it is exhausted, and new-expressions then yield nullptr instead of
+    /// constructing into it.
+    static void* operator new(std::size_t size) noexcept { return GameAllocate(size); }
     static void operator delete(void* memory) noexcept { GameFree(memory); }
     static void* operator new[](std::size_t size) = delete;
     static void operator delete[](void* memory) = delete;

@@ -2,6 +2,8 @@
 
 #include "render/Com.h"
 
+#include <wrl/client.h>
+
 namespace bw::render {
 
 class DirectDraw;
@@ -123,7 +125,7 @@ private:
     ~DirectDraw();
 
     RefCount m_references;
-    IDirectDraw7* m_real = nullptr;
+    Microsoft::WRL::ComPtr<IDirectDraw7> m_real;  // ddraw.dll's object, for hardware queries
     D3DDEVICEDESC7 m_deviceDescription{};
     HWND m_window = nullptr;
     DWORD m_cooperativeFlags = 0;

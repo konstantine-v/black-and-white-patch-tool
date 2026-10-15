@@ -1,5 +1,6 @@
 #include "diagnostics/Diagnostics.h"
 
+#include "core/Handle.h"
 #include "core/Image.h"
 #include "core/Log.h"
 #include "core/Patch.h"
@@ -57,25 +58,29 @@ std::size_t CopyStack(const std::uint32_t* stack, StackCopy& copy) noexcept
 
 /// Logs the values in `slots` that point into original code: a crude but dependable call stack for code without
 /// frame pointers. Map them with symbols/functions.csv.
-void LogCodeAddresses(std::span<const std::uint32_t> slots) noexcept
+void LogCodeAddresses(std::span<const std::uint32_t> slots, log::Level level = log::Level::Error) noexcept
 {
-    std::string line;
+    // A stack buffer: this runs inside exception handlers, where the heap may be locked by the faulting thread.
+    constexpr int kMaxAddresses = 24;
+    std::array<char, kMaxAddresses * 9> line{};
+    char* cursor = line.data();
     int found = 0;
     for (const std::uint32_t value : slots) {
         if (value >= g_text.begin && value < g_text.end) {
-            line += std::format(" {:08x}", value);
-            if (++found == 24) {
+            cursor = std::format_to_n(cursor, 9, " {:08x}", value).out;
+            if (++found == kMaxAddresses) {
                 break;
             }
         }
     }
-    log::Error("  stack (original code):{}", line);
+    log::Format(level, "  stack (original code):{}",
+                std::string_view(line.data(), static_cast<std::size_t>(cursor - line.data())));
 }
 
-void LogStackScan(const std::uint32_t* stack) noexcept
+void LogStackScan(const std::uint32_t* stack, log::Level level = log::Level::Error) noexcept
 {
     StackCopy copy{};
-    LogCodeAddresses(std::span(copy).first(CopyStack(stack, copy)));
+    LogCodeAddresses(std::span(copy).first(CopyStack(stack, copy)), level);
 }
 
 LONG CALLBACK LogException(EXCEPTION_POINTERS* exception) noexcept
@@ -104,7 +109,7 @@ LONG CALLBACK LogException(EXCEPTION_POINTERS* exception) noexcept
 void WINAPI ExitProcessTraced(UINT exitCode)
 {
     log::Info("ExitProcess({}) called from 0x{:08x}", exitCode, reinterpret_cast<Address>(_ReturnAddress()));
-    LogStackScan(static_cast<const std::uint32_t*>(_AddressOfReturnAddress()));
+    LogStackScan(static_cast<const std::uint32_t*>(_AddressOfReturnAddress()), log::Level::Info);
     g_exitProcess(exitCode);
 }
 
@@ -120,7 +125,7 @@ int WINAPI MessageBoxATraced(HWND window, LPCSTR text, LPCSTR caption, UINT type
 void WINAPI PostQuitMessageTraced(int exitCode)
 {
     log::Info("PostQuitMessage({}) called from 0x{:08x}", exitCode, reinterpret_cast<Address>(_ReturnAddress()));
-    LogStackScan(static_cast<const std::uint32_t*>(_AddressOfReturnAddress()));
+    LogStackScan(static_cast<const std::uint32_t*>(_AddressOfReturnAddress()), log::Level::Info);
     g_postQuitMessage(exitCode);
 }
 
@@ -177,36 +182,35 @@ void LogThreadStacks() noexcept
     };
     try {
         std::vector<ThreadState> threads;
-        const HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-        if (snapshot == INVALID_HANDLE_VALUE) {
-            log::Error("Thread list unavailable ({})", GetLastError());
-            return;
-        }
-        THREADENTRY32 entry{};
-        entry.dwSize = sizeof entry;
-        for (BOOL more = Thread32First(snapshot, &entry); more; more = Thread32Next(snapshot, &entry)) {
-            if (entry.th32OwnerProcessID == GetCurrentProcessId() && entry.th32ThreadID != GetCurrentThreadId()) {
-                threads.push_back({entry.th32ThreadID});
+        {
+            const UniqueHandle snapshot(CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0));
+            if (!snapshot) {
+                log::Error("Thread list unavailable ({})", GetLastError());
+                return;
+            }
+            THREADENTRY32 entry{};
+            entry.dwSize = sizeof entry;
+            for (BOOL more = Thread32First(snapshot.Get(), &entry); more; more = Thread32Next(snapshot.Get(), &entry)) {
+                if (entry.th32OwnerProcessID == GetCurrentProcessId() && entry.th32ThreadID != GetCurrentThreadId()) {
+                    threads.push_back({entry.th32ThreadID});
+                }
             }
         }
-        CloseHandle(snapshot);
 
+        // While a thread is suspended nothing here allocates or logs: it may hold the heap or the log lock.
         for (ThreadState& state : threads) {
-            const HANDLE thread = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT, FALSE, state.id);
-            if (thread == nullptr) {
+            const UniqueHandle thread(OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT, FALSE, state.id));
+            if (!thread || SuspendThread(thread.Get()) == static_cast<DWORD>(-1)) {
                 continue;
             }
-            if (SuspendThread(thread) != static_cast<DWORD>(-1)) {
-                CONTEXT context{};
-                context.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
-                if (GetThreadContext(thread, &context)) {
-                    state.captured = true;
-                    state.eip = context.Eip;
-                    state.slots = CopyStack(reinterpret_cast<const std::uint32_t*>(context.Esp), state.stack);
-                }
-                ResumeThread(thread);
+            CONTEXT context{};
+            context.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
+            if (GetThreadContext(thread.Get(), &context)) {
+                state.captured = true;
+                state.eip = context.Eip;
+                state.slots = CopyStack(reinterpret_cast<const std::uint32_t*>(context.Esp), state.stack);
             }
-            CloseHandle(thread);
+            ResumeThread(thread.Get());
         }
 
         for (const ThreadState& state : threads) {

@@ -1,5 +1,7 @@
 #include "core/Patch.h"
 
+#include "core/Image.h"
+
 #include <cstring>
 
 namespace bw::patch {
@@ -59,8 +61,10 @@ namespace {
 template <typename Matches>
 void* ReplaceImportWhere(HMODULE module, std::string_view dll, Matches matches, const void* replacement) noexcept
 {
-    const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(module);
-    const auto* nt = AtRva<IMAGE_NT_HEADERS>(module, static_cast<DWORD>(dos->e_lfanew));
+    const IMAGE_NT_HEADERS32* nt = image::NtHeaders(module);
+    if (nt == nullptr) {
+        return nullptr;
+    }
     const IMAGE_DATA_DIRECTORY& directory = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
     if (directory.VirtualAddress == 0) {
         return nullptr;

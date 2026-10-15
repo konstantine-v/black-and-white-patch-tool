@@ -198,34 +198,6 @@ TEST(ScreenshotChannelsScaleToEightBits)
     CHECK_EQ(ExtractChannel(0xf800 | (31 << 5), 0x001f), 0u);
 }
 
-TEST(ScreenshotChecksums)
-{
-    const std::uint8_t iend[] = {'I', 'E', 'N', 'D'};
-    CHECK_EQ(bw::diagnostics::Crc32(iend), 0xae426082u);
-    const std::uint8_t wikipedia[] = {'W', 'i', 'k', 'i', 'p', 'e', 'd', 'i', 'a'};
-    CHECK_EQ(bw::diagnostics::Adler32(wikipedia), 0x11e60398u);
-}
-
-TEST(ScreenshotPngLayout)
-{
-    const std::uint8_t rgb[] = {255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255};
-    const std::vector<std::uint8_t> png = bw::diagnostics::EncodePng(2, 2, rgb);
-    const std::uint8_t signature[] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
-    CHECK(std::equal(std::begin(signature), std::end(signature), png.begin()));
-    // IHDR: length 13, width 2 and height 2 big-endian, 8 bits per channel, RGB.
-    CHECK_EQ(png[11], 13u);
-    CHECK_EQ(png[19], 2u);
-    CHECK_EQ(png[23], 2u);
-    CHECK_EQ(png[24], 8u);
-    CHECK_EQ(png[25], 2u);
-    // IDAT holds zlib header (2) + one stored block (5 + two rows of 7) + Adler-32 (4) = 25 bytes.
-    CHECK_EQ(png[33], 0u);
-    CHECK_EQ(png[36], 25u);
-    // Ends with the IEND chunk.
-    const std::uint8_t end[] = {0, 0, 0, 0, 'I', 'E', 'N', 'D', 0xae, 0x42, 0x60, 0x82};
-    CHECK(std::equal(std::begin(end), std::end(end), png.end() - 12));
-}
-
 TEST(ShutdownWatchdogEndsAStalledProcess)
 {
     std::wstring self(MAX_PATH, L'\0');

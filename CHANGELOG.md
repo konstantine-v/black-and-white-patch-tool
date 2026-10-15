@@ -4,6 +4,42 @@ Versions follow [semantic versioning](https://semver.org/) while the decompilati
 increases with each wave of decompiled code or fixes, the patch version for corrections. The version is set in
 `CMakeLists.txt` and tagged in git as `vX.Y.Z`.
 
+## 0.10.1
+
+Code review: safety, reuse and performance. No change in what the game does.
+
+Security and memory safety:
+- Replacement images: their size comes from the file and is now bounded (16384 per side) before buffer sizes are
+  computed from it; a crafted image could overflow the pixel buffer in the 32-bit process.
+- Paths outside the ANSI code page (e.g. a texture named in Chinese) no longer end the game: path text for messages and
+  names is converted without exceptions (`log::PathText`).
+- Texture dumps stay inside `Textures\Dump` whatever the source name contains.
+- COM methods of the DirectDraw/Direct3D 7 replacement that allocate return `DDERR_OUTOFMEMORY` instead of letting a C++
+  exception unwind into the game's code (`Guarded`); logging helpers there no longer throw.
+- Direct3D 9 objects are held by typed `ComPtr`s instead of untyped pointers released by hand (a depth buffer could
+  leak when allocation failed).
+- The launcher quotes game arguments correctly (an embedded quote could split or add arguments), frees the injected
+  path on every error, checks `CommandLineToArgvW` and `ResumeThread`, and owns its handles (`UniqueHandle`).
+- PE headers are validated (DOS and PE signatures) before sections or imports are read.
+- `TraceDirectX` stubs are made execute-only after they are written (no writable and executable memory) and no longer
+  leak on allocation failure.
+- The exception logger formats stack addresses into a stack buffer: no heap use while the faulting thread may hold the
+  heap lock.
+- `GameAllocated::operator new` is `noexcept`, so a failed game-heap allocation yields nullptr as intended.
+
+Reuse:
+- One `ModulePath` helper (no `MAX_PATH` truncation) replaces five copies.
+- One image module (`core/Bitmap`, Windows Imaging Component) for screenshots and texture packs; the hand-written PNG
+  encoder and the old `BW_DUMP_TEXTURES` aid are gone.
+
+Performance:
+- Screenshots are compressed PNGs (4 MB instead of 11 MB at 2560x1440).
+- Blit and surface logging costs nothing without `[Log] Debug=1` (it formatted a string on every blit).
+- One `WriteFile` per log line instead of five; the launcher reads the executable in one go to hash it; the
+  `TraceDirectX` report looks up method addresses in a sorted table.
+
+Tests: argument quoting, handle ownership, module paths, PE header checks, UTF-8 path text, PNG round trip (44 tests).
+
 ## 0.10.0
 
 Texture packs by name, and full-colour file textures.

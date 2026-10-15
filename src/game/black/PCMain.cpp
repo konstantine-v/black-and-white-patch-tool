@@ -7,6 +7,8 @@
 
 #include <array>
 #include <cctype>
+#include <filesystem>
+#include <string>
 
 namespace black {
 
@@ -15,10 +17,10 @@ namespace {
 /// Drive letter of the folder runblack.exe was started from (the install folder).
 char InstallDriveLetter() noexcept
 {
-    std::array<char, MAX_PATH> directory{};
-    const DWORD length = GetCurrentDirectoryA(static_cast<DWORD>(directory.size()), directory.data());
-    if (length >= 2 && directory[1] == ':') {
-        return static_cast<char>(std::toupper(static_cast<unsigned char>(directory[0])));
+    std::error_code error;
+    const std::wstring root = std::filesystem::current_path(error).root_name().wstring();
+    if (!error && root.size() == 2 && root[1] == L':' && root[0] < 0x80 && std::isalpha(static_cast<int>(root[0]))) {
+        return static_cast<char>(std::toupper(static_cast<int>(root[0])));
     }
     return 'C';
 }
