@@ -4,6 +4,32 @@ Versions follow [semantic versioning](https://semver.org/) while the decompilati
 increases with each wave of decompiled code or fixes, the patch version for corrections. The version is set in
 `CMakeLists.txt` and tagged in git as `vX.Y.Z`.
 
+## 0.11.0
+
+Release packaging: a setup program, so players can install the decompilation into their own copy of the game.
+
+- `package.ps1` builds, tests and verifies, then writes `dist\BWDecomp-<version>-Setup.exe`, a zip of the same files
+  for installing by hand, and their SHA-256 sums. Neither contains anything from the game.
+- `BWDecompSetup.exe` (`src/setup`), one executable with no dependencies:
+  - finds the game folder (an earlier installation, the game's `GameDir`, the retail default) and checks
+    `runblack.exe`, explaining the SafeDisc build and unsupported versions before installing;
+  - installs `BWLaunch.exe`, `BWDecomp.dll`, `BWDecomp.ini` (only if there is none) and, in `BWDecomp\`, a player
+    readme, `FIXES.md`, `RENDERER.md`, `TEXTURES.md`, `CHANGELOG.md`, the shipped settings and the uninstaller;
+  - writes each file next to its target and moves it over it, refuses while the game runs from the folder, and asks
+    for administrator rights only when the folder needs them (an elevated copy does the file work; registry entries
+    and shortcuts stay with the player's account);
+  - adds Start menu and desktop shortcuts with the game's icon, an entry in Settings > Apps (per user), and `GameDir`
+    when the game has none (profiles and saves would otherwise go to `\dev\black`);
+  - records every file with its SHA-256 in `BWDecomp\Installed.txt`: updating removes files a version no longer
+    ships, uninstalling removes exactly what was installed plus `BWDecomp.log`, and keeps a `BWDecomp.ini` the player
+    changed. Manifest paths are checked to stay inside the game folder;
+  - `/quiet`, `/dir`, `/nostartmenu`, `/desktop` and `/uninstall` for installing without windows.
+- Version resources (file properties) on `BWLaunch.exe`, `BWDecomp.dll` and the setup program.
+- Recognising `runblack.exe` (`core/GameExecutable`) and UTF-8/UTF-16 conversion (`core/Unicode.h`) are shared by the
+  launcher and setup.
+- 7 new tests: install, update and removal in a scratch folder, manifest paths outside the folder, path comparison,
+  executable recognition, administrator-rights detection, text conversion.
+
 ## 0.10.1
 
 Code review: safety, reuse and performance. No change in what the game does.

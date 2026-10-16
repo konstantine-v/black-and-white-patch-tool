@@ -1,0 +1,83 @@
+Black & White Decompilation @PROJECT_VERSION@
+==========================================
+
+A fan-made decompilation of Lionhead's Black & White (2001) that runs the game on current Windows with its old
+problems fixed: SafeDisc, the "You need DirectX 7" check, crashes at start-up and at high resolutions, hangs when
+quitting, the disc requirement and more. It also adds a Direct3D 9 renderer: native widescreen resolutions such as
+2560x1440, windowed and borderless modes, anti-aliasing, and texture packs.
+
+The game is not included. You need your own installed copy of Black & White.
+
+
+Requirements
+------------
+- Windows 10 or 11.
+- Black & White 1.00 (English), installed.
+- The unprotected runblack.exe. The retail runblack.exe is wrapped in SafeDisc, whose driver current Windows refuses
+  to load, so it cannot start. The decompilation supports the unprotected build of the same version, from the disc's
+  crack folder (SHA-256 86a30b08ab2ea8a240403d37f8f0303cf65aa5cde8e7f673049ab01654ccf755). BWLaunch.exe checks
+  runblack.exe and tells you if it is a different one. The official patches 1.1 and 1.2 are not supported yet.
+- The disc or a mounted disc image, or else the disc's Audio folder copied into the game folder.
+
+
+Installing
+----------
+Run BWDecomp-@PROJECT_VERSION@-Setup.exe and choose the Black & White folder (the one with runblack.exe). Setup adds
+these files and changes none of the game's:
+
+    BWLaunch.exe    starts the game with the fixes
+    BWDecomp.dll    the decompiled code, the fixes and the renderer
+    BWDecomp.ini    settings (kept when you update)
+    BWDecomp\       this file, the documentation and the uninstaller
+
+Setup asks for administrator rights only if the game folder needs them (for example below Program Files).
+
+Without setup: copy BWLaunch.exe, BWDecomp.dll and BWDecomp.ini from the zip into the game folder.
+
+
+Playing
+-------
+Start the game with the "Black & White (Decompilation)" shortcut, or BWLaunch.exe in the game folder. Starting
+runblack.exe directly runs the game without any of the fixes.
+
+
+Settings
+--------
+BWDecomp.ini in the game folder; each setting is explained there. Some favourites:
+
+    [Display] WindowMode       0 full screen, 1 window, 2 borderless window covering the screen
+    [Display] AntiAliasing     4 or 8 for smoother edges (0 = off)
+    [Display] Anisotropy       16 for sharper ground in the distance (0 = off)
+    [Display] VSync            1 = no tearing
+    [Diagnostics] ScreenshotKey  123 = F12 saves PNG screenshots to Screenshots\
+    [Textures] Replace         texture packs from Textures\Replace\ (see TEXTURES.md)
+
+The game's own settings, such as the screen resolution and the detail level, stay where the game keeps them:
+HKEY_CURRENT_USER\Software\Lionhead Studios Ltd\Black & White\BWSetup.
+
+BWDecomp\BWDecomp.default.ini is a copy of the settings as shipped with this version.
+
+
+Problems
+--------
+BWDecomp.log in the game folder says what happened; include it when you report a problem. Every fix can be switched
+off in BWDecomp.ini; FIXES.md explains each one.
+
+
+Uninstalling
+------------
+Settings > Apps > Black & White Decompilation, or BWDecomp\Uninstall.exe. Only what setup installed is removed. A
+BWDecomp.ini you changed, your saved games, screenshots and texture packs stay. If you copied the files from the zip
+by hand, delete them by hand.
+
+
+Documentation (in this folder)
+------------------------------
+    FIXES.md       every fix, its cause and its setting
+    RENDERER.md    the Direct3D 9 renderer
+    TEXTURES.md    making texture packs
+    CHANGELOG.md   what changed in each version
+
+
+Black & White is a game by Lionhead Studios. This project is not affiliated with or endorsed by Lionhead Studios or
+the game's publishers, and contains none of the game's code or data.

@@ -5,19 +5,16 @@
 // Without --game it starts the runblack.exe next to itself. The game's files are never modified.
 
 #include "core/CommandLine.h"
+#include "core/GameExecutable.h"
 #include "core/Handle.h"
-#include "core/Image.h"
 #include "core/Module.h"
+#include "core/Unicode.h"
 #include "core/Windows.h"
 
 #include <shellapi.h>
 
 #include <filesystem>
-#include <fstream>
-#include <optional>
-#include <span>
 #include <string>
-#include <vector>
 
 static_assert(sizeof(void*) == 4, "the launcher must be 32-bit so kernel32!LoadLibraryW matches the game's");
 
@@ -30,56 +27,9 @@ void ShowError(const std::wstring& message)
     MessageBoxW(nullptr, message.c_str(), kTitle, MB_OK | MB_ICONERROR);
 }
 
-std::wstring Widen(std::string_view text)
-{
-    return {text.begin(), text.end()};
-}
-
 std::wstring LastErrorText()
 {
     return L" (Windows error " + std::to_wstring(GetLastError()) + L")";
-}
-
-std::optional<std::string> FileSha256(const std::filesystem::path& file)
-{
-    std::error_code error;
-    const std::uintmax_t size = std::filesystem::file_size(file, error);
-    constexpr std::uintmax_t kLargestExecutable = 64u << 20;  // runblack.exe is 8 MB
-    if (error || size > kLargestExecutable) {
-        return std::nullopt;
-    }
-    std::vector<char> bytes(static_cast<std::size_t>(size));
-    std::ifstream stream(file, std::ios::binary);
-    if (!stream.read(bytes.data(), static_cast<std::streamsize>(bytes.size()))) {
-        return std::nullopt;
-    }
-    const auto digest = bw::image::ComputeSha256(std::as_bytes(std::span(bytes)));
-    if (!digest) {
-        return std::nullopt;
-    }
-    const auto hex = bw::image::ToHex(*digest);
-    return std::string(hex.data(), hex.size());
-}
-
-/// Explains why `game` cannot be used, or returns nullopt when it is the supported build.
-std::optional<std::wstring> CheckGameExecutable(const std::filesystem::path& game)
-{
-    const std::optional<std::string> hash = FileSha256(game);
-    if (!hash) {
-        return L"Cannot read " + game.wstring() + L".";
-    }
-    if (*hash == bw::image::kSupportedFileSha256) {
-        return std::nullopt;
-    }
-    if (*hash == bw::image::kRetailSafeDiscFileSha256) {
-        return L"This runblack.exe is the SafeDisc-protected retail build. SafeDisc needs the secdrv.sys driver, "
-               L"which current Windows versions refuse to load, so this file cannot start.\n\n"
-               L"The decompilation targets the unprotected build of the same version that is on the Black & White "
-               L"disc (crack\\runblack.exe). Copy that file over the installed runblack.exe and start again.";
-    }
-    return L"Unsupported runblack.exe (SHA-256 " + Widen(*hash) +
-           L").\n\nThe decompilation only supports Black & White 1.00 (English) with SHA-256 " +
-           Widen(bw::image::kSupportedFileSha256) + L".";
 }
 
 struct Options {
@@ -173,8 +123,9 @@ int Run()
         ShowError(L"Cannot find " + dll.wstring() + L".");
         return 1;
     }
-    if (const std::optional<std::wstring> problem = CheckGameExecutable(options.game)) {
-        ShowError(*problem);
+    if (const std::wstring problem = bw::DescribeGameExecutable(bw::CheckGameExecutable(options.game), options.game);
+        !problem.empty()) {
+        ShowError(problem);
         return 1;
     }
 
@@ -214,7 +165,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
         return Run();
     }
     catch (const std::exception& exception) {
-        ShowError(L"Unexpected error: " + Widen(exception.what()));
+        ShowError(L"Unexpected error: " + bw::Widen(exception.what()));
         return 1;
     }
 }

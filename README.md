@@ -38,12 +38,31 @@ Needs Visual Studio 2022 (Desktop C++ workload) and CMake 3.25+. The output is 3
 .\build.ps1            # configure, build, run unit tests, verify hooks against orig\runblack.exe
 ```
 
-Output in `build\Release`: `BWLaunch.exe`, `BWDecomp.dll`, `bw_tests.exe`.
+Output in `build\Release`: `BWLaunch.exe`, `BWDecomp.dll`, `BWDecompSetup.exe`, `bw_tests.exe`.
 
 Hook verification (`tools/check_hooks.py`) needs a copy of the supported executable at `orig\runblack.exe` and a
 Python 3.10+ with `capstone==5.0.6` and `pefile==2024.8.26` (path in `BW_PYTHON`).
 
+## Release
+
+`.\package.ps1` builds, tests and verifies hooks as `build.ps1` does, then writes the release to `dist\`:
+
+| File | Contents |
+|---|---|
+| `BWDecomp-<version>-Setup.exe` | The setup program (`src/setup`): finds the game folder, checks `runblack.exe`, installs `BWLaunch.exe`, `BWDecomp.dll`, `BWDecomp.ini` and the player documentation (`BWDecomp\`), adds shortcuts and an entry in Settings > Apps, and doubles as the uninstaller |
+| `BWDecomp-<version>.zip` | The same files, for installing by hand |
+| `BWDecomp-<version>-SHA256SUMS.txt` | Hashes of both |
+
+Nothing from the game goes in. Setup asks for administrator rights only when the game folder needs them (e.g. below
+Program Files), never replaces a `BWDecomp.ini` that exists, and lists what it installed with hashes in
+`BWDecomp\Installed.txt`, so uninstalling removes exactly that and keeps a changed `BWDecomp.ini`. Without windows:
+`BWDecompSetup.exe /quiet [/dir <game folder>] [/nostartmenu] [/desktop]`, and `/uninstall [/quiet]`. The player
+readme is `release/README.txt.in`. The executables are not code-signed, so Windows SmartScreen warns when a
+downloaded setup is first started.
+
 ## Install and play
+
+Players: run the setup program from a release and start the game with its shortcut. For development:
 
 `tools/install/install_game.py` installs the game from your disc image without the 2001 InstallShield setup:
 cabinets (MD5-verified), the DLLs the setup copies from the disc root, the disc's `Audio` folder, the supported
@@ -87,6 +106,7 @@ save PNG screenshots to `Screenshots\` in the game folder; `tools/screenshot.py`
 | `src/render` | Direct3D 9 renderer: DirectDraw/Direct3D 7 implemented on Direct3D 9Ex |
 | `src/diagnostics` | Run-time tracing without a debugger: exits, message boxes, exceptions, thread stacks, game debug output, screenshots |
 | `src/dll`, `src/launcher` | `BWDecomp.dll` entry point and `BWLaunch.exe` |
+| `src/setup`, `release/` | Setup program and uninstaller (`BWDecompSetup.exe`); the player readme |
 | `symbols/functions.csv` | Every original function: address, end, name, class, original source file, status |
 | `tools/` | Analysis and verification scripts (Python, static analysis only) |
 | `tests/` | Unit tests and the hook-manifest writer |
