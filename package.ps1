@@ -53,7 +53,19 @@ finally {
 $setupRelease = Join-Path $dist "$name-Setup.exe"
 Copy-Item $setup $setupRelease -Force
 
-$sums = foreach ($file in @($setupRelease, $zip)) {
+# One download with both: the setup program and the loose files (for installing by hand).
+$bundle = Join-Path $dist "$name-Release.zip"
+Remove-Item $bundle -ErrorAction SilentlyContinue
+$staging = Join-Path $dist "staging"
+Remove-Item $staging -Recurse -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory $staging | Out-Null
+Copy-Item $setupRelease (Join-Path $staging "$name-Setup.exe")
+Expand-Archive $zip (Join-Path $staging "Manual install")
+Copy-Item (Join-Path $root "build\generated\release\README.txt") (Join-Path $staging "README.txt")
+Compress-Archive -Path (Join-Path $staging "*") -DestinationPath $bundle
+Remove-Item $staging -Recurse -Force
+
+$sums = foreach ($file in @($setupRelease, $zip, $bundle)) {
     "$((Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant()) *$(Split-Path $file -Leaf)"
 }
 $sumsFile = Join-Path $dist "$name-SHA256SUMS.txt"
@@ -68,4 +80,4 @@ if ($git) {
     if ($tag -notcontains "v$version") { Write-Warning "HEAD is not tagged v$version" }
 }
 
-Get-ChildItem $setupRelease, $zip, $sumsFile | Format-Table Name, Length -AutoSize
+Get-ChildItem $setupRelease, $zip, $bundle, $sumsFile | Format-Table Name, Length -AutoSize
