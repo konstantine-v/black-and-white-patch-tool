@@ -58,13 +58,13 @@ std::wstring DescribeGameExecutable(const GameExecutableCheck& check, const std:
     case GameBuild::RetailSafeDisc:
         return L"This runblack.exe is the SafeDisc-protected retail build. SafeDisc needs the secdrv.sys driver, "
                L"which current Windows versions refuse to load, so this file cannot start.\n\n"
-               L"The decompilation targets the unprotected build of the same version that is on the Black & White "
+               L"The patch targets the unprotected build of the same version that is on the Black & White "
                L"disc (crack\\runblack.exe). Copy that file over the installed runblack.exe and start again.";
     case GameBuild::Unknown:
         break;
     }
     return L"Unsupported runblack.exe (SHA-256 " + Widen(check.sha256) +
-           L").\n\nThe decompilation only supports Black & White 1.00 (English) with SHA-256 " +
+           L").\n\nThe patch only supports Black & White 1.00 (English) with SHA-256 " +
            Widen(image::kSupportedFileSha256) + L".";
 }
 

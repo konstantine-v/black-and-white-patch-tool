@@ -1,5 +1,5 @@
 # Builds the release files in dist\: the setup program, a zip of the same files for installing by hand, and their
-# SHA-256 sums. Only the decompilation's own files go in; the game's code and data never do.
+# SHA-256 sums. Only the patch's own files go in; the game's code and data never do.
 #
 #   .\package.ps1             # build.ps1 (Release build, tests, hook verification), then package
 #   .\package.ps1 -SkipBuild  # package the existing build\Release output

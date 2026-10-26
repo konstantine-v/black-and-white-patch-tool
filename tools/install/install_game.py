@@ -4,7 +4,7 @@ Steps (all from the user's own disc image):
   1. extract the InstallShield cabinets (data1.hdr/.cab, data2.cab) with iscab_extract.py, MD5-verified;
   2. add the DLLs the setup copies loose from the disc root (LHLogR.dll, DSETUP.dll, debug MFC runtime);
   3. merge the disc's Audio folder (music banks are only on the disc);
-  4. install the unprotected runblack.exe from the disc's crack folder (the build the decompilation supports; the
+  4. install the unprotected runblack.exe from the disc's crack folder (the build the patch supports; the
      cabinet's runblack.exe is wrapped in SafeDisc, which current Windows cannot run) after checking its SHA-256;
   5. write HKCU\\Software\\Lionhead Studios Ltd\\Black & White\\GameDir, which the game uses for profiles and saves
      (0x00715a20; without it they go to \\dev\\black). LHLogR.dll's registry helpers default to HKEY_CURRENT_USER,

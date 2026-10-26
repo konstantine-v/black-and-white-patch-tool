@@ -1,4 +1,4 @@
-// BWDecompSetup.exe: installs the decompilation into a Black & White folder; installed as BWDecomp\Uninstall.exe, it
+// BWDecompSetup.exe: installs the patch into a Black & White folder; installed as BWDecomp\Uninstall.exe, it
 // removes it again.
 //
 //     BWDecompSetup.exe [/quiet] [/dir <game folder>] [/nostartmenu] [/desktop]
@@ -41,8 +41,8 @@ using Microsoft::WRL::ComPtr;
 
 enum ExitCode : int { kDone = 0, kFailed = 1, kCancelled = 2 };
 
-constexpr wchar_t kTitle[] = L"Black & White Decompilation Setup";
-constexpr wchar_t kUninstallTitle[] = L"Black & White Decompilation";
+constexpr wchar_t kTitle[] = L"Black & White Patch Setup";
+constexpr wchar_t kUninstallTitle[] = L"Black & White Patch";
 constexpr wchar_t kTemporaryUninstallerPrefix[] = L"BWDecomp-Uninstall-";
 
 struct Arguments {
@@ -343,7 +343,7 @@ std::vector<std::wstring> Install(const std::filesystem::path& folder, const Pay
 
 std::wstring InstalledMessage(const std::filesystem::path& folder, const std::vector<std::wstring>& warnings)
 {
-    std::wstring message = L"Black & White Decompilation " + bw::Widen(bw::kVersion) + L" is installed in " +
+    std::wstring message = L"Black & White Patch " + bw::Widen(bw::kVersion) + L" is installed in " +
                            folder.wstring() + L".";
     if (!warnings.empty()) {
         message += L"\n\nSome extras could not be set up:\n" + Join(warnings);
@@ -384,7 +384,7 @@ std::wstring StatusText(const DialogState& state, PCWSTR& icon)
         return L"runblack.exe in this folder cannot be read.";
     case bw::GameBuild::Supported:
         icon = IDI_INFORMATION;
-        text = L"Found Black & White 1.00 (English), the version the decompilation supports.";
+        text = L"Found Black & White 1.00 (English), the version the patch supports.";
         break;
     case bw::GameBuild::RetailSafeDisc:
         text = L"This runblack.exe is the SafeDisc-protected retail version, which current Windows cannot start. "
@@ -400,7 +400,7 @@ std::wstring StatusText(const DialogState& state, PCWSTR& icon)
                 L" is installed here and will be updated. Your BWDecomp.ini is kept.";
     }
     else if (std::error_code error; std::filesystem::exists(state.folder / L"BWDecomp.dll", error)) {
-        text += L"\n\nThe copy of the decompilation in this folder will be replaced. Your BWDecomp.ini is kept.";
+        text += L"\n\nThe copy of the patch in this folder will be replaced. Your BWDecomp.ini is kept.";
     }
     return text;
 }
@@ -515,7 +515,7 @@ void InitDialog(HWND dialog, DialogState& state)
         state.headingFont = CreateFontIndirectW(&font);
         SendDlgItemMessageW(dialog, IDC_HEADING, WM_SETFONT, reinterpret_cast<WPARAM>(state.headingFont), FALSE);
     }
-    SetDlgItemTextW(dialog, IDC_HEADING, (L"Black && White Decompilation " + bw::Widen(bw::kVersion)).c_str());
+    SetDlgItemTextW(dialog, IDC_HEADING, (L"Black && White Patch " + bw::Widen(bw::kVersion)).c_str());
 
     const std::filesystem::path folder =
         state.arguments->folder.empty() ? FindGameFolder() : state.arguments->folder;
@@ -691,7 +691,7 @@ int RunUninstall(const Arguments& arguments, Reporter& reporter)
     reporter.SetTitle(kUninstallTitle);
     const std::optional<std::filesystem::path> folder = InstalledFolder(arguments);
     if (!folder) {
-        reporter.Error(L"The decompilation is not installed.");
+        reporter.Error(L"The patch is not installed.");
         return kFailed;
     }
     if (IsInside(bw::ModulePath(nullptr), *folder)) {
@@ -705,7 +705,7 @@ int RunUninstall(const Arguments& arguments, Reporter& reporter)
     }
 
     int result = kCancelled;
-    if (reporter.Ask(L"Remove the Black & White decompilation from " + folder->wstring() +
+    if (reporter.Ask(L"Remove the Black & White patch from " + folder->wstring() +
                      L"?\n\nThe game, your saved games, screenshots and texture packs are not touched.")) {
         try {
             CheckNotRunning(*folder);
@@ -724,7 +724,7 @@ int RunUninstall(const Arguments& arguments, Reporter& reporter)
                 !registered || SamePath(*registered, *folder)) {
                 Unregister();
             }
-            std::wstring message = L"The decompilation was removed from " + folder->wstring() + L".";
+            std::wstring message = L"The patch was removed from " + folder->wstring() + L".";
             if (!kept.empty()) {
                 message += L"\n\nKept because you changed them:\n" + Join(kept);
             }

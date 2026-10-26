@@ -10,7 +10,7 @@
 #include <string_view>
 #include <vector>
 
-/// Copying the decompilation into a game folder and removing it again. Every file written is listed, with its hash,
+/// Copying the patch into a game folder and removing it again. Every file written is listed, with its hash,
 /// in a manifest, so removal deletes exactly what was installed and keeps what the player changed.
 namespace bw::setup {
 

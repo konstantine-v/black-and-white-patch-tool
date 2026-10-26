@@ -7,11 +7,11 @@ LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
 
 IDD_SETUP DIALOGEX 0, 0, 316, 198
 STYLE DS_SHELLFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX
-CAPTION "Black & White Decompilation Setup"
+CAPTION "Black & White Patch Setup"
 FONT 9, "Segoe UI", 400, 0, 0x1
 BEGIN
     LTEXT           "", IDC_HEADING, 12, 10, 292, 14
-    LTEXT           "Adds the decompilation's launcher, fixes and Direct3D 9 renderer to an installed copy of Black && White. The game is not included, and none of its files are changed.", IDC_INTRO, 12, 28, 292, 26
+    LTEXT           "Adds the patch's launcher, fixes and Direct3D 9 renderer to an installed copy of Black && White. The game is not included, and none of its files are changed.", IDC_INTRO, 12, 28, 292, 26
     LTEXT           "&Game folder (the one with runblack.exe):", IDC_FOLDER_LABEL, 12, 60, 292, 9
     EDITTEXT        IDC_FOLDER, 12, 71, 236, 14, ES_AUTOHSCROLL
     PUSHBUTTON      "&Browse...", IDC_BROWSE, 254, 70, 50, 16

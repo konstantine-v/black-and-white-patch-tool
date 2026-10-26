@@ -1,7 +1,7 @@
 # Fixes
 
 What stops *Black & White* 1.00 from running properly on current Windows, where in the original the cause lies, and
-what the decompilation does about it. Addresses refer to the supported `runblack.exe`. Settings are in
+what the patch does about it. Addresses refer to the supported `runblack.exe`. Settings are in
 `BWDecomp.ini`.
 
 ## Fixed
@@ -11,7 +11,7 @@ what the decompilation does about it. Addresses refer to the supported `runblack
 **Symptom:** the installed game does not start on Windows Vista or later.
 **Cause:** the retail `runblack.exe` is wrapped in SafeDisc, which needs the `secdrv.sys` kernel driver; Windows
 blocks it since 2015.
-**Fix:** the decompilation targets the unprotected build of the same version from the disc's `crack\` folder
+**Fix:** the patch targets the unprotected build of the same version from the disc's `crack\` folder
 (identical size, entry point restored to `0x00737b8e`). `BWLaunch.exe` recognises the SafeDisc build by its hash and
 says what to do. The unprotected build still carries SafeDisc's dead `stxt774`/`stxt371` sections; they disappear
 when the decompilation becomes a standalone executable.

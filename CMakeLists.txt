@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(BlackWhiteDecomp VERSION 0.11.0 LANGUAGES CXX RC)
+project(BlackWhiteDecomp VERSION 0.11.1 LANGUAGES CXX RC)
 
 if(NOT MSVC OR NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
     message(FATAL_ERROR "Build with MSVC for 32-bit x86 (-A Win32): the code runs inside the 32-bit runblack.exe.")
@@ -18,7 +18,7 @@ target_compile_definitions(bw_options INTERFACE
     _WIN32_WINNT=0x0A00 WINVER=0x0A00 UNICODE _UNICODE)
 target_include_directories(bw_options INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_BINARY_DIR}/generated)
 
-# The decompilation's own version (CHANGELOG.md), logged at start-up and shown by the launcher.
+# The patch's own version (CHANGELOG.md), logged at start-up and shown by the launcher.
 configure_file(src/core/Version.h.in generated/core/Version.h @ONLY)
 
 # A Windows version resource (file properties) for `target`. `type` is VFT_APP or VFT_DLL.
@@ -72,11 +72,11 @@ target_link_libraries(bw_game PUBLIC bw_core ddraw dxguid d3d9)
 
 add_library(BWDecomp SHARED src/dll/DllMain.cpp)
 target_link_libraries(BWDecomp PRIVATE bw_game)
-bw_version_resource(BWDecomp BWDecomp.dll "Black & White decompilation: decompiled code, fixes and renderer" VFT_DLL)
+bw_version_resource(BWDecomp BWDecomp.dll "Black & White patch: decompiled code, fixes and renderer" VFT_DLL)
 
 add_executable(BWLaunch WIN32 src/launcher/Launcher.cpp)
 target_link_libraries(BWLaunch PRIVATE bw_core shell32)
-bw_version_resource(BWLaunch BWLaunch.exe "Black & White decompilation launcher" VFT_APP)
+bw_version_resource(BWLaunch BWLaunch.exe "Black & White patch launcher" VFT_APP)
 
 # The setup program (see package.ps1): BWLaunch.exe, BWDecomp.dll, the default settings and the player documentation
 # as resources of one executable, which installs them into a game folder and doubles as the uninstaller.
@@ -103,7 +103,7 @@ target_link_libraries(BWDecompSetup PRIVATE bw_setup shlwapi comctl32)
 # The manifest above says asInvoker; the linker's own UAC entry would duplicate it.
 target_link_options(BWDecompSetup PRIVATE /MANIFESTUAC:NO)
 add_dependencies(BWDecompSetup BWLaunch BWDecomp)
-bw_version_resource(BWDecompSetup BWDecompSetup.exe "Black & White decompilation setup" VFT_APP)
+bw_version_resource(BWDecompSetup BWDecompSetup.exe "Black & White patch setup" VFT_APP)
 
 enable_testing()
 add_executable(bw_tests

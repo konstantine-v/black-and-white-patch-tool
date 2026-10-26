@@ -22,7 +22,9 @@ using Microsoft::WRL::ComPtr;
 
 constexpr wchar_t kUninstallKey[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\BlackWhiteDecomp";
 constexpr wchar_t kGameKey[] = L"Software\\Lionhead Studios Ltd\\Black & White";
-constexpr wchar_t kShortcutName[] = L"Black & White (Decompilation).lnk";
+constexpr wchar_t kShortcutName[] = L"Black & White (Patch).lnk";
+// Before 0.11.1 the project was called a decompilation.
+constexpr wchar_t kLegacyShortcutName[] = L"Black & White (Decompilation).lnk";
 
 std::optional<std::wstring> ReadString(HKEY root, const wchar_t* key, const wchar_t* value)
 {
@@ -86,11 +88,32 @@ std::filesystem::path KnownFolder(const KNOWNFOLDERID& id)
     return result;
 }
 
-std::filesystem::path ShortcutPath(ShortcutPlace place)
+std::filesystem::path ShortcutPath(ShortcutPlace place, const wchar_t* name = kShortcutName)
 {
     const std::filesystem::path folder =
         KnownFolder(place == ShortcutPlace::StartMenu ? FOLDERID_Programs : FOLDERID_Desktop);
-    return folder.empty() ? folder : folder / kShortcutName;
+    return folder.empty() ? folder : folder / name;
+}
+
+/// Deletes the shortcut `path` when it starts `launcher`.
+void DeleteShortcutTo(const std::filesystem::path& path, const std::filesystem::path& launcher)
+{
+    std::error_code error;
+    if (path.empty() || !std::filesystem::exists(path, error)) {
+        return;
+    }
+    ComPtr<IShellLinkW> link;
+    ComPtr<IPersistFile> file;
+    std::wstring target(32768, wchar_t{});
+    if (FAILED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&link))) ||
+        FAILED(link.As(&file)) || FAILED(file->Load(path.c_str(), STGM_READ)) ||
+        FAILED(link->GetPath(target.data(), static_cast<int>(target.size()), nullptr, SLGP_RAWPATH))) {
+        return;
+    }
+    target.resize(wcsnlen(target.c_str(), target.size()));
+    if (SamePath(target, launcher)) {
+        DeleteFileW(path.c_str());
+    }
 }
 
 bool HoldsGame(const std::filesystem::path& folder)
@@ -218,12 +241,15 @@ void CreateShortcut(ShortcutPlace place, const std::filesystem::path& folder)
     if (SUCCEEDED(result)) {
         link->SetPath(launcher.c_str());
         link->SetWorkingDirectory(folder.c_str());
-        link->SetDescription(L"Black & White with the decompilation's fixes");
+        link->SetDescription(L"Black & White with the patch's fixes");
         link->SetIconLocation(game.c_str(), 0);
         result = link.As(&file);
     }
     if (SUCCEEDED(result)) {
         result = file->Save(path.c_str(), TRUE);
+    }
+    if (SUCCEEDED(result)) {
+        DeleteShortcutTo(ShortcutPath(place, kLegacyShortcutName), launcher);  // renamed in 0.11.1
     }
     if (FAILED(result)) {
         throw SetupError(L"Cannot create the shortcut " + path.wstring() + L":\n" +
@@ -235,23 +261,8 @@ void RemoveShortcuts(const std::filesystem::path& folder)
 {
     const std::filesystem::path launcher = folder / kLauncherPath;
     for (const ShortcutPlace place : {ShortcutPlace::StartMenu, ShortcutPlace::Desktop}) {
-        const std::filesystem::path path = ShortcutPath(place);
-        std::error_code error;
-        if (path.empty() || !std::filesystem::exists(path, error)) {
-            continue;
-        }
-        ComPtr<IShellLinkW> link;
-        ComPtr<IPersistFile> file;
-        std::wstring target(32768, L'\0');
-        if (FAILED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&link))) ||
-            FAILED(link.As(&file)) || FAILED(file->Load(path.c_str(), STGM_READ)) ||
-            FAILED(link->GetPath(target.data(), static_cast<int>(target.size()), nullptr, SLGP_RAWPATH))) {
-            continue;
-        }
-        target.resize(wcsnlen(target.c_str(), target.size()));
-        if (SamePath(target, launcher)) {
-            DeleteFileW(path.c_str());
-        }
+        DeleteShortcutTo(ShortcutPath(place), launcher);
+        DeleteShortcutTo(ShortcutPath(place, kLegacyShortcutName), launcher);
     }
 }
 

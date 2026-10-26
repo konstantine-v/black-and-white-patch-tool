@@ -20,7 +20,7 @@ static_assert(sizeof(void*) == 4, "the launcher must be 32-bit so kernel32!LoadL
 
 namespace {
 
-constexpr wchar_t kTitle[] = L"Black & White decompilation";
+constexpr wchar_t kTitle[] = L"Black & White patch";
 
 void ShowError(const std::wstring& message)
 {

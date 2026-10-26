@@ -242,7 +242,7 @@ HRESULT DirectDraw::EnumDevices(LPD3DENUMDEVICESCALLBACK7 callback, LPVOID conte
     if (callback == nullptr) {
         return DDERR_INVALIDPARAMS;
     }
-    char description[] = "Direct3D 9 (Black & White decompilation)";
+    char description[] = "Direct3D 9 (Black & White patch)";
     char name[] = "Direct3D HAL";
     D3DDEVICEDESC7 desc = m_deviceDescription;
     callback(description, name, &desc, context);

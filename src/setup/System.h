@@ -10,7 +10,7 @@
 /// Nothing here needs administrator rights.
 namespace bw::setup {
 
-inline constexpr wchar_t kProductName[] = L"Black & White Decompilation";
+inline constexpr wchar_t kProductName[] = L"Black & White Patch";
 
 /// The game folder of the previous installation, from its uninstall entry.
 [[nodiscard]] std::optional<std::filesystem::path> RegisteredFolder();

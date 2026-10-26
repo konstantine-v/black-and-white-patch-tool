@@ -296,7 +296,7 @@ RemoveResult RemoveFiles(const std::filesystem::path& folder)
 {
     const std::optional<Manifest> manifest = ReadManifest(folder);
     if (!manifest) {
-        throw SetupError(L"The decompilation is not installed in " + folder.wstring() + L" (there is no " +
+        throw SetupError(L"The patch is not installed in " + folder.wstring() + L" (there is no " +
                          std::wstring(kManifestPath) + L").");
     }
     RemoveResult result;

@@ -1,7 +1,7 @@
-Black & White Decompilation @PROJECT_VERSION@
-==========================================
+Black & White Patch @PROJECT_VERSION@
+=====================================
 
-A fan-made decompilation of Lionhead's Black & White (2001) that runs the game on current Windows with its old
+A fan-made patch for Lionhead's Black & White (2001) that runs the game on current Windows with its old
 problems fixed: SafeDisc, the "You need DirectX 7" check, crashes at start-up and at high resolutions, hangs when
 quitting, the disc requirement and more. It also adds a Direct3D 9 renderer: native widescreen resolutions such as
 2560x1440, windowed and borderless modes, anti-aliasing, and texture packs.
@@ -14,7 +14,7 @@ Requirements
 - Windows 10 or 11.
 - Black & White 1.00 (English), installed.
 - The unprotected runblack.exe. The retail runblack.exe is wrapped in SafeDisc, whose driver current Windows refuses
-  to load, so it cannot start. The decompilation supports the unprotected build of the same version, from the disc's
+  to load, so it cannot start. The patch supports the unprotected build of the same version, from the disc's
   crack folder (SHA-256 86a30b08ab2ea8a240403d37f8f0303cf65aa5cde8e7f673049ab01654ccf755). BWLaunch.exe checks
   runblack.exe and tells you if it is a different one. The official patches 1.1 and 1.2 are not supported yet.
 - The disc or a mounted disc image, or else the disc's Audio folder copied into the game folder.
@@ -37,7 +37,7 @@ Without setup: copy BWLaunch.exe, BWDecomp.dll and BWDecomp.ini from the zip int
 
 Playing
 -------
-Start the game with the "Black & White (Decompilation)" shortcut, or BWLaunch.exe in the game folder. Starting
+Start the game with the "Black & White (Patch)" shortcut, or BWLaunch.exe in the game folder. Starting
 runblack.exe directly runs the game without any of the fixes.
 
 
@@ -66,7 +66,7 @@ off in BWDecomp.ini; FIXES.md explains each one.
 
 Uninstalling
 ------------
-Settings > Apps > Black & White Decompilation, or BWDecomp\Uninstall.exe. Only what setup installed is removed. A
+Settings > Apps > Black & White Patch, or BWDecomp\Uninstall.exe. Only what setup installed is removed. A
 BWDecomp.ini you changed, your saved games, screenshots and texture packs stay. If you copied the files from the zip
 by hand, delete them by hand.
 

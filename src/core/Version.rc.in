@@ -18,7 +18,7 @@ BEGIN
             VALUE "FileVersion", "@PROJECT_VERSION@"
             VALUE "InternalName", "@BW_FILE_NAME@"
             VALUE "OriginalFilename", "@BW_FILE_NAME@"
-            VALUE "ProductName", "Black & White Decompilation"
+            VALUE "ProductName", "Black & White Patch"
             VALUE "ProductVersion", "@PROJECT_VERSION@"
         END
     END

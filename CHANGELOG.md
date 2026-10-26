@@ -4,6 +4,18 @@ Versions follow [semantic versioning](https://semver.org/) while the decompilati
 increases with each wave of decompiled code or fixes, the patch version for corrections. The version is set in
 `CMakeLists.txt` and tagged in git as `vX.Y.Z`.
 
+## 0.11.1
+
+The project is now called the Black & White Patch.
+
+- README rewritten: what the patch gives players, installation, settings, the supported game version, how it works,
+  building and releasing, layout, contributing, and a link to the launcher project.
+- "Decompilation" became "patch" in everything players see: the setup window and messages, the launcher's messages,
+  the file properties, the Settings > Apps entry, the Start menu shortcut ("Black & White (Patch)", replacing the
+  old one when setup updates an installation), the Direct3D adapter description, the player readme and `FIXES.md`.
+  Technical documentation still says "decompilation" where it describes the technique, and the manifest header
+  that 0.11.0 installations wrote is still read.
+
 ## 0.11.0
 
 Release packaging: a setup program, so players can install the decompilation into their own copy of the game.
